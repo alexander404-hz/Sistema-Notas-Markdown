@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Sistema de Notas Markdown - Fase 4</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="container">
+      <header>
+        <h1>Sistema de Notas Markdown</h1>
+        <div id="message-container" class="message"></div>
+      </header>
+
+      <div class="main-content">
+        <aside class="sidebar">
+          <div class="sidebar-header">
+            <h2>Mis Notas</h2>
+            <button id="new-note-button" class="btn btn-primary">
+              Nueva Nota
+            </button>
+            <button id="delete-note-button" class="btn btn-danger">
+              Eliminar
+            </button>
+            <button id="export-notes-button" class="btn btn-secondary">
+              Exportar
+            </button>
+          </div>
+          <div id="note-list" class="note-list"></div>
+        </aside>
+
+        <main class="editor-section is-hidden" id="editor-section">
+          <div class="editor-header">
+            <h2>Editor</h2>
+            <div class="editor-actions">
+              <button id="save-note-button" class="btn btn-success">
+                Guardar
+              </button>
+            </div>
+          </div>
+          <textarea
+            id="editor-textarea"
+            class="editor-textarea"
+            placeholder="Escribe tu nota en Markdown aquí..."
+          ></textarea>
+        </main>
+
+        <section class="preview-section is-hidden" id="preview-section">
+          <div class="preview-header">
+            <h2>Preview</h2>
+          </div>
+          <div id="preview-container" class="preview-container"></div>
+        </section>
+      </div>
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/markdown-it@14.0.0/dist/markdown-it.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/markdown-it-task-lists@2.1.1/dist/markdown-it-task-lists.min.js"></script>
+    <script type="module" src="app.js"></script>
+  </body>
+</html>
