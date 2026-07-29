@@ -238,9 +238,7 @@ function loadFromStorage() {
  *   updateNote: Function,
  *   deleteNote: Function,
  *   getAllNotes: Function,
- *   getNotesOrderedByDate: Function,
- *   getFavoriteNotes: Function,
- *   searchNotes: Function,
+ *   queryNotes: Function,
  *   getNotesCount: Function
  * }}
  */
@@ -393,46 +391,30 @@ function createPersistentNotesStore() {
   }
 
   /**
-   * Retorna todas las notas ordenadas por `updatedAt` de forma descendente
-   * (la más reciente primero).
-   * @returns {Result} `{ notes }` con las notas ordenadas.
+   * Filtra y ordena las notas en un solo paso, combinando los criterios
+   * de favoritas y búsqueda por texto.
+   * @param {{ favoritesOnly?: boolean, searchQuery?: string }} [filters]
+   * @returns {Result} `{ notes }` con las notas filtradas, ordenadas de
+   * más reciente a más antigua según `updatedAt`.
    */
-  function getNotesOrderedByDate() {
-    const sorted = cloneNotes(notes).sort((a, b) => b.updatedAt - a.updatedAt);
+  function queryNotes({ favoritesOnly = false, searchQuery = "" } = {}) {
+    let result = notes;
 
-    return Result.ok({ notes: sorted });
-  }
-
-  /**
-   * Retorna solo las notas marcadas como favoritas.
-   * @returns {Result} `{ notes }` con las notas favoritas.
-   */
-  function getFavoriteNotes() {
-    const favorites = notes.filter((note) => note.favorite === true);
-
-    return Result.ok({ notes: cloneNotes(favorites) });
-  }
-
-  /**
-   * Busca notas que contengan el término en el título o en el contenido.
-   * La búsqueda no es sensible a mayúsculas/minúsculas.
-   * Si la consulta está vacía, retorna un arreglo vacío.
-   * @param {string} query - Término de búsqueda.
-   * @returns {Result} `{ notes }` con las notas que coinciden.
-   */
-  function searchNotes(query) {
-    if (!query || query.trim() === "") {
-      return Result.ok({ notes: [] });
+    if (favoritesOnly) {
+      result = result.filter((note) => note.favorite === true);
     }
 
-    const normalizedQuery = query.toLowerCase().trim();
+    const normalizedQuery = searchQuery.trim().toLowerCase();
 
-    const filtered = notes.filter((note) => {
-      const searchableText = `${note.title} ${note.content}`.toLowerCase();
-      return searchableText.includes(normalizedQuery);
-    });
+    if (normalizedQuery !== "") {
+      result = result.filter((note) =>
+        `${note.title} ${note.content}`.toLowerCase().includes(normalizedQuery),
+      );
+    }
 
-    return Result.ok({ notes: cloneNotes(filtered) });
+    const sorted = cloneNotes(result).sort((a, b) => b.updatedAt - a.updatedAt);
+
+    return Result.ok({ notes: sorted });
   }
 
   /**
@@ -449,9 +431,7 @@ function createPersistentNotesStore() {
     updateNote,
     deleteNote,
     getAllNotes,
-    getNotesOrderedByDate,
-    getFavoriteNotes,
-    searchNotes,
+    queryNotes,
     getNotesCount,
   };
 }
@@ -568,20 +548,20 @@ function renderEditor(note) {
  */
 function confirmDiscardChangesIfNeeded() {
   const editorTextArea = document.querySelector("#editor-textarea");
-  if (!editorTextArea) return;
+  if (!editorTextArea) return true;
 
   if (editorTextArea.value === lastLoadedContent) return true;
   return confirm("Tenés cambios sin guardar. ¿Querés descartarlos?");
 }
 
 /**
- * Habilita o deshabilita el botón de eliminar según si hay una nota seleccionada.
+ * Muestra el botón de eliminar solo cuando hay una nota activa seleccionada.
  */
 function updateDeleteButtonState() {
   const deleteNoteButton = document.querySelector("#delete-note-button");
   if (!deleteNoteButton) return;
 
-  deleteNoteButton.disabled = !currentNoteId;
+  deleteNoteButton.classList.toggle("is-hidden", !currentNoteId);
 }
 
 /**
@@ -655,30 +635,16 @@ function showMessage(message, isError) {
 
 /**
  * Calcula qué notas mostrar en la lista según los filtros activos
- * (`searchQuery` y `showFavoritesOnly`), combinando las funciones del store.
+ * (`searchQuery` y `showFavoritesOnly`). Delega el filtrado y el
+ * ordenamiento por completo al store, que lo resuelve en un único paso.
  * @param {Object} store - Store de notas.
  * @returns {Array} Notas visibles, ordenadas de más reciente a más antigua.
  */
 function getVisibleNotes(store) {
-  const query = searchQuery.trim();
-  let notes;
-
-  if (showFavoritesOnly) {
-    notes = store.getFavoriteNotes().data.notes;
-
-    if (query !== "") {
-      const normalizedQuery = query.toLowerCase();
-      notes = notes.filter((note) =>
-        `${note.title} ${note.content}`.toLowerCase().includes(normalizedQuery),
-      );
-    }
-  } else if (query !== "") {
-    notes = store.searchNotes(query).data.notes;
-  } else {
-    notes = store.getNotesOrderedByDate().data.notes;
-  }
-
-  return notes.sort((a, b) => b.updatedAt - a.updatedAt);
+  return store.queryNotes({
+    favoritesOnly: showFavoritesOnly,
+    searchQuery,
+  }).data.notes;
 }
 
 // ----------------------------------------------------------------------------
@@ -767,17 +733,10 @@ function initializeEventListeners(store) {
     }
   });
 
-  //Marcar/desmarcar nota como favorita
+  //Editar nota y Marcar/desmarcar favorita
   const noteListContainer = document.querySelector("#note-list");
 
-  noteListContainer?.addEventListener("click", (event) => {
-    const favoriteButton = event.target.closest(".favorite-toggle");
-
-    if (!favoriteButton) return;
-
-    // Evita que el click también dispare la apertura de la nota en el editor.
-    event.stopPropagation();
-
+  const handleToggleFavorite = (favoriteButton) => {
     const noteId = favoriteButton.dataset.id;
     const currentNote = store.getNoteById(noteId);
 
@@ -794,20 +753,11 @@ function initializeEventListeners(store) {
     } else {
       showMessage(result.message, true);
     }
-  });
+  };
 
-  //Editar nota
-
-  noteListContainer?.addEventListener("click", (event) => {
-    if (event.target.closest(".favorite-toggle")) return;
-
-    const noteItem = event.target.closest(".note-item");
-
-    if (!noteItem) return;
-
+  const handleOpenNote = (noteItem) => {
     if (!confirmDiscardChangesIfNeeded()) return;
 
-    // El ID de la nota es un string (UUID), no un número — no convertir con Number().
     const noteId = noteItem.dataset.id;
 
     const result = store.getNoteById(noteId);
@@ -819,6 +769,19 @@ function initializeEventListeners(store) {
     } else {
       showMessage(result.message, true);
     }
+  };
+
+  noteListContainer?.addEventListener("click", (event) => {
+    const favoriteButton = event.target.closest(".favorite-toggle");
+
+    if (favoriteButton) {
+      event.stopPropagation();
+      return handleToggleFavorite(favoriteButton);
+    }
+
+    const noteItem = event.target.closest(".note-item");
+
+    if (noteItem) return handleOpenNote(noteItem);
   });
 
   const editorTextArea = document.querySelector("#editor-textarea");

@@ -4,19 +4,38 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Sistema de Notas Markdown - Fase 4</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&display=swap"
+      rel="stylesheet"
+    />
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
     <div class="container">
       <header>
         <h1>Sistema de Notas Markdown</h1>
-        <div id="message-container" class="message"></div>
+        <p class="app-subtitle">
+          Escribe en Markdown, organiza tus ideas y expórtalas cuando
+          quieras.
+        </p>
       </header>
 
       <div class="main-content">
         <aside class="sidebar">
           <div class="sidebar-header">
-            <h2>Mis Notas</h2>
+            <div class="sidebar-title-row">
+              <h2>Mis Notas</h2>
+              <button
+                id="export-notes-button"
+                class="btn-icon"
+                title="Exportar notas"
+                aria-label="Exportar notas"
+              >
+                ⭳
+              </button>
+            </div>
             <input
               type="search"
               id="search-input"
@@ -25,21 +44,18 @@
               aria-label="Buscar notas"
             />
             <button id="new-note-button" class="btn btn-primary">
-              Nueva Nota
+              + Nueva Nota
             </button>
-            <button
-              id="favorites-toggle-button"
-              class="btn btn-outline"
-              aria-pressed="false"
-            >
-              ☆ Solo favoritas
-            </button>
-            <button id="delete-note-button" class="btn btn-danger">
-              Eliminar
-            </button>
-            <button id="export-notes-button" class="btn btn-secondary">
-              Exportar
-            </button>
+            <div class="filters-bar">
+              <span class="filters-label">Filtros</span>
+              <button
+                id="favorites-toggle-button"
+                class="filter-chip"
+                aria-pressed="false"
+              >
+                ☆ Favoritas
+              </button>
+            </div>
           </div>
           <div id="note-list" class="note-list"></div>
         </aside>
@@ -50,6 +66,12 @@
             <div class="editor-actions">
               <button id="save-note-button" class="btn btn-success">
                 Guardar
+              </button>
+              <button
+                id="delete-note-button"
+                class="btn btn-danger is-hidden"
+              >
+                Eliminar
               </button>
             </div>
           </div>
@@ -68,6 +90,7 @@
         </section>
       </div>
     </div>
+    <div id="message-container" class="message"></div>
     <script
       src="https://cdn.jsdelivr.net/npm/markdown-it@14.0.0/dist/markdown-it.min.js"
       integrity="sha384-m4eAATWFHwurgWQTBxFRh5346JXxGTucT+lJH2TcxGrE+vNBENJGasyBNnLc23ft"
