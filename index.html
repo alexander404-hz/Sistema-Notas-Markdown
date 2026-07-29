@@ -36,14 +36,99 @@
                 >
                   +
                 </button>
+                <div class="notes-menu">
+                  <button
+                    id="notes-menu-button"
+                    class="btn-icon"
+                    title="Más opciones"
+                    aria-label="Más opciones"
+                    aria-haspopup="true"
+                    aria-expanded="false"
+                  >
+                    ⋮
+                  </button>
+                  <div
+                    id="notes-menu-dropdown"
+                    class="notes-menu-dropdown is-hidden"
+                    role="menu"
+                  >
+                    <button
+                      id="menu-select-notes"
+                      class="notes-menu-item"
+                      role="menuitem"
+                    >
+                      ☑ Seleccionar notas
+                    </button>
+                    <button
+                      id="menu-export-all"
+                      class="notes-menu-item"
+                      role="menuitem"
+                    >
+                      ⭳ Exportar todas
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div id="bulk-actions-bar" class="bulk-actions-bar is-hidden">
+              <div class="bulk-actions-header">
+                <span id="selection-count-label">0 notas seleccionadas</span>
                 <button
-                  id="export-notes-button"
+                  id="cancel-selection-button"
                   class="btn-icon"
-                  title="Exportar notas"
-                  aria-label="Exportar notas"
+                  title="Cancelar selección"
+                  aria-label="Cancelar selección"
                 >
-                  ⭳
+                  ✕
                 </button>
+              </div>
+              <div class="bulk-actions-controls">
+                <label class="bulk-select-all">
+                  <input
+                    type="checkbox"
+                    id="select-all-checkbox"
+                    aria-label="Seleccionar todas las notas visibles"
+                  />
+                  <span>Seleccionar todas</span>
+                </label>
+                <div class="bulk-actions-buttons">
+                  <button
+                    id="bulk-favorite-button"
+                    class="btn-icon"
+                    title="Marcar como favoritas"
+                    aria-label="Marcar como favoritas"
+                    disabled
+                  >
+                    ★
+                  </button>
+                  <button
+                    id="bulk-unfavorite-button"
+                    class="btn-icon"
+                    title="Quitar de favoritas"
+                    aria-label="Quitar de favoritas"
+                    disabled
+                  >
+                    ☆
+                  </button>
+                  <button
+                    id="bulk-export-button"
+                    class="btn-icon"
+                    title="Exportar selección"
+                    aria-label="Exportar selección"
+                    disabled
+                  >
+                    ⭳
+                  </button>
+                  <button
+                    id="bulk-delete-button"
+                    class="btn-icon btn-icon-danger"
+                    title="Eliminar selección"
+                    aria-label="Eliminar selección"
+                    disabled
+                  >
+                    🗑
+                  </button>
+                </div>
               </div>
             </div>
             <input
@@ -62,61 +147,6 @@
               >
                 ☆ Favoritas
               </button>
-              <button
-                id="selection-toggle-button"
-                class="filter-chip"
-                aria-pressed="false"
-              >
-                ☑ Seleccionar
-              </button>
-            </div>
-            <div id="bulk-actions-bar" class="bulk-actions-bar is-hidden">
-              <label class="bulk-select-all">
-                <input
-                  type="checkbox"
-                  id="select-all-checkbox"
-                  aria-label="Seleccionar todas las notas visibles"
-                />
-                <span id="selection-count-label">0 notas seleccionadas</span>
-              </label>
-              <div class="bulk-actions-buttons">
-                <button
-                  id="bulk-favorite-button"
-                  class="btn-icon"
-                  title="Marcar como favoritas"
-                  aria-label="Marcar como favoritas"
-                  disabled
-                >
-                  ★
-                </button>
-                <button
-                  id="bulk-unfavorite-button"
-                  class="btn-icon"
-                  title="Quitar de favoritas"
-                  aria-label="Quitar de favoritas"
-                  disabled
-                >
-                  ☆
-                </button>
-                <button
-                  id="bulk-export-button"
-                  class="btn-icon"
-                  title="Exportar selección"
-                  aria-label="Exportar selección"
-                  disabled
-                >
-                  ⭳
-                </button>
-                <button
-                  id="bulk-delete-button"
-                  class="btn-icon btn-icon-danger"
-                  title="Eliminar selección"
-                  aria-label="Eliminar selección"
-                  disabled
-                >
-                  🗑
-                </button>
-              </div>
             </div>
           </div>
           <div id="note-list" class="note-list"></div>

@@ -623,64 +623,6 @@ function renderNoteList(notes) {
 }
 
 /**
- * Alterna la visibilidad de los contenedores de editor y preview.
- * * @param {boolean} isVisible - Indica si se deben mostrar (true) u ocultar (false).
- * @returns {void} Esta función no retorna ningún valor.
- */
-function toggleEditorAndPreview(isVisible) {
-  const editorSection = document.querySelector("#editor-section");
-  const previewSection = document.querySelector("#preview-section");
-
-  editorSection?.classList.toggle("is-hidden", !isVisible);
-  previewSection?.classList.toggle("is-hidden", !isVisible);
-}
-
-/**
- * Renderizar el editor con el contenido de una nota.
- * @param {Object|null} note - Nota a renderizar o null para el editor vacío.
- */
-function renderEditor(note) {
-  const editorTextArea = document.querySelector("#editor-textarea");
-
-  if (!editorTextArea) {
-    console.error("No se encontró el elemento #editor-textarea");
-    return;
-  }
-
-  toggleEditorAndPreview(true);
-
-  editorTextArea.value = note?.content || "";
-  currentNoteId = note?.id ?? null;
-  lastLoadedContent = editorTextArea.value;
-
-  updateDeleteButtonState();
-  renderPreview(editorTextArea.value);
-}
-
-/**
- * Si hay cambios sin guardar, pide confirmación al usuario antes de
- * descartarlos (por ejemplo, al cambiar de nota o crear una nueva).
- * @returns {boolean} `true` si es seguro continuar (no hay cambios o el usuario confirmó descartarlos).
- */
-function confirmDiscardChangesIfNeeded() {
-  const editorTextArea = document.querySelector("#editor-textarea");
-  if (!editorTextArea) return true;
-
-  if (editorTextArea.value === lastLoadedContent) return true;
-  return confirm("Tenés cambios sin guardar. ¿Querés descartarlos?");
-}
-
-/**
- * Muestra el botón de eliminar solo cuando hay una nota activa seleccionada.
- */
-function updateDeleteButtonState() {
-  const deleteNoteButton = document.querySelector("#delete-note-button");
-  if (!deleteNoteButton) return;
-
-  deleteNoteButton.classList.toggle("is-hidden", !currentNoteId);
-}
-
-/**
  * Convierte texto Markdown a HTML.
  * @param {string} content - El texto en formato Markdown.
  * @returns {string} El HTML generado o una cadena vacía si falla.
@@ -720,6 +662,51 @@ function renderPreview(content) {
 }
 
 /**
+ * Muestra el botón de eliminar solo cuando hay una nota activa seleccionada.
+ */
+function updateDeleteButtonState() {
+  const deleteNoteButton = document.querySelector("#delete-note-button");
+  if (!deleteNoteButton) return;
+
+  deleteNoteButton.classList.toggle("is-hidden", !currentNoteId);
+}
+
+/**
+ * Alterna la visibilidad de los contenedores de editor y preview.
+ * * @param {boolean} isVisible - Indica si se deben mostrar (true) u ocultar (false).
+ * @returns {void} Esta función no retorna ningún valor.
+ */
+function toggleEditorAndPreview(isVisible) {
+  const editorSection = document.querySelector("#editor-section");
+  const previewSection = document.querySelector("#preview-section");
+
+  editorSection?.classList.toggle("is-hidden", !isVisible);
+  previewSection?.classList.toggle("is-hidden", !isVisible);
+}
+
+/**
+ * Renderizar el editor con el contenido de una nota.
+ * @param {Object|null} note - Nota a renderizar o null para el editor vacío.
+ */
+function renderEditor(note) {
+  const editorTextArea = document.querySelector("#editor-textarea");
+
+  if (!editorTextArea) {
+    console.error("No se encontró el elemento #editor-textarea");
+    return;
+  }
+
+  toggleEditorAndPreview(true);
+
+  editorTextArea.value = note?.content || "";
+  currentNoteId = note?.id ?? null;
+  lastLoadedContent = editorTextArea.value;
+
+  updateDeleteButtonState();
+  renderPreview(editorTextArea.value);
+}
+
+/**
  * Muestra un mensaje de error o éxito
  * @param {string} message - Mensaje a mostrar
  * @param {boolean} isError - true si es error, false si es éxito
@@ -745,9 +732,18 @@ function showMessage(message, isError) {
   }, 3000);
 }
 
-// ----------------------------------------------------------------------------
-// FILTROS DE LA LISTA (búsqueda + favoritas)
-// ----------------------------------------------------------------------------
+/**
+ * Si hay cambios sin guardar, pide confirmación al usuario antes de
+ * descartarlos (por ejemplo, al cambiar de nota o crear una nueva).
+ * @returns {boolean} `true` si es seguro continuar (no hay cambios o el usuario confirmó descartarlos).
+ */
+function confirmDiscardChangesIfNeeded() {
+  const editorTextArea = document.querySelector("#editor-textarea");
+  if (!editorTextArea) return true;
+
+  if (editorTextArea.value === lastLoadedContent) return true;
+  return confirm("Tenés cambios sin guardar. ¿Querés descartarlos?");
+}
 
 /**
  * Calcula qué notas mostrar en la lista según los filtros activos
@@ -761,6 +757,19 @@ function getVisibleNotes(store) {
     favoritesOnly: showFavoritesOnly,
     searchQuery,
   }).data.notes;
+}
+
+/**
+ * Si hay cambios apunto de guardar, reinicia el scroll vertical de las notas
+ */
+function resetScrollListNotes() {
+  const noteListElement = document.querySelector("#note-list");
+  if (!noteListElement) {
+    console.error("No se encontró el elemento #note-list");
+    return;
+  }
+
+  noteListElement.scrollTo({ top: 0, behavior: "smooth" });
 }
 
 // ----------------------------------------------------------------------------
@@ -786,6 +795,7 @@ function initializeEventListeners(store) {
 
     currentNoteId = null;
     refreshNoteList();
+    resetScrollListNotes();
     renderEditor(null);
   });
 
@@ -814,6 +824,7 @@ function initializeEventListeners(store) {
 
       updateDeleteButtonState();
       refreshNoteList();
+      resetScrollListNotes();
     } else {
       showMessage(result.message, true);
     }
@@ -843,6 +854,7 @@ function initializeEventListeners(store) {
 
         updateDeleteButtonState();
         refreshNoteList();
+        resetScrollListNotes();
       } else {
         showMessage(result.message, true);
       }
@@ -944,10 +956,45 @@ function initializeEventListeners(store) {
     );
   });
 
-  //Exportar notas
-  const exportNotesButton = document.querySelector("#export-notes-button");
+  //Menú de opciones (3 puntos): Seleccionar notas / Exportar todas
+  const notesMenuButton = document.querySelector("#notes-menu-button");
+  const notesMenuDropdown = document.querySelector("#notes-menu-dropdown");
+  const menuSelectNotesItem = document.querySelector("#menu-select-notes");
+  const menuExportAllItem = document.querySelector("#menu-export-all");
 
-  exportNotesButton?.addEventListener("click", () => {
+  const closeNotesMenu = () => {
+    notesMenuDropdown?.classList.add("is-hidden");
+    notesMenuButton?.setAttribute("aria-expanded", "false");
+  };
+
+  const openNotesMenu = () => {
+    notesMenuDropdown?.classList.remove("is-hidden");
+    notesMenuButton?.setAttribute("aria-expanded", "true");
+  };
+
+  notesMenuButton?.addEventListener("click", (event) => {
+    event.stopPropagation();
+    const isOpen = notesMenuDropdown?.classList.contains("is-hidden") === false;
+    isOpen ? closeNotesMenu() : openNotesMenu();
+  });
+
+  // Cerrar el menú al hacer click afuera o al presionar Escape
+  document.addEventListener("click", (event) => {
+    if (!event.target.closest(".notes-menu")) closeNotesMenu();
+  });
+
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") closeNotesMenu();
+  });
+
+  menuSelectNotesItem?.addEventListener("click", () => {
+    closeNotesMenu();
+    enterSelectionMode();
+  });
+
+  menuExportAllItem?.addEventListener("click", () => {
+    closeNotesMenu();
+
     const {
       data: { notes },
     } = store.getAllNotes();
@@ -996,13 +1043,11 @@ function initializeEventListeners(store) {
   // ----------------------------------------------------------------------
 
   const bulkActionsBar = document.querySelector("#bulk-actions-bar");
-  const selectionToggleButton = document.querySelector(
-    "#selection-toggle-button",
+  const cancelSelectionButton = document.querySelector(
+    "#cancel-selection-button",
   );
   const selectAllCheckbox = document.querySelector("#select-all-checkbox");
-  const selectionCountLabel = document.querySelector(
-    "#selection-count-label",
-  );
+  const selectionCountLabel = document.querySelector("#selection-count-label");
   const bulkFavoriteButton = document.querySelector("#bulk-favorite-button");
   const bulkUnfavoriteButton = document.querySelector(
     "#bulk-unfavorite-button",
@@ -1036,31 +1081,36 @@ function initializeEventListeners(store) {
       ).length;
 
       selectAllCheckbox.checked =
-        visibleNotes.length > 0 &&
-        visibleSelectedCount === visibleNotes.length;
+        visibleNotes.length > 0 && visibleSelectedCount === visibleNotes.length;
       selectAllCheckbox.indeterminate =
-        visibleSelectedCount > 0 &&
-        visibleSelectedCount < visibleNotes.length;
+        visibleSelectedCount > 0 && visibleSelectedCount < visibleNotes.length;
     }
   };
 
-  // Entrar/salir del modo selección
-  selectionToggleButton?.addEventListener("click", () => {
-    selectionMode = !selectionMode;
+  // Entrar al modo selección (se activa desde el menú de 3 puntos)
+  const enterSelectionMode = () => {
+    if (selectionMode) return;
 
-    if (!selectionMode) selectedNoteIds.clear();
-
-    selectionToggleButton.classList.toggle("active", selectionMode);
-    selectionToggleButton.setAttribute("aria-pressed", String(selectionMode));
-    selectionToggleButton.textContent = selectionMode
-      ? "✕ Cancelar"
-      : "☑ Seleccionar";
-
-    bulkActionsBar?.classList.toggle("is-hidden", !selectionMode);
+    selectionMode = true;
+    bulkActionsBar?.classList.remove("is-hidden");
 
     refreshNoteList();
     updateBulkActionsUI();
-  });
+  };
+
+  // Salir del modo selección (botón ✕ de la barra de acciones)
+  const exitSelectionMode = () => {
+    if (!selectionMode) return;
+
+    selectionMode = false;
+    selectedNoteIds.clear();
+    bulkActionsBar?.classList.add("is-hidden");
+
+    refreshNoteList();
+    updateBulkActionsUI();
+  };
+
+  cancelSelectionButton?.addEventListener("click", exitSelectionMode);
 
   // Seleccionar/deseleccionar todas las notas visibles (respeta filtros)
   selectAllCheckbox?.addEventListener("change", () => {
@@ -1093,7 +1143,7 @@ function initializeEventListeners(store) {
         : `${result.data.updatedCount} notas marcadas como favoritas`,
       false,
     );
-    refreshNoteList();
+    exitSelectionMode();
   });
 
   // Quitar de favoritas la selección
@@ -1111,7 +1161,7 @@ function initializeEventListeners(store) {
         : `${result.data.updatedCount} notas quitadas de favoritas`,
       false,
     );
-    refreshNoteList();
+    exitSelectionMode();
   });
 
   // Exportar solo las notas seleccionadas (una, varias o todas si se
@@ -1129,6 +1179,7 @@ function initializeEventListeners(store) {
       result.data.notes.length === 1 ? "Nota exportada" : "Notas exportadas",
       false,
     );
+    exitSelectionMode();
   });
 
   // Eliminar todas las notas seleccionadas de una vez
@@ -1162,9 +1213,7 @@ function initializeEventListeners(store) {
 
     showMessage(result.data.message, false);
 
-    selectedNoteIds.clear();
-    refreshNoteList();
-    updateBulkActionsUI();
+    exitSelectionMode();
   });
 }
 

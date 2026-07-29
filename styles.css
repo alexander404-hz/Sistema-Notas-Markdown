@@ -247,6 +247,60 @@ header h1::before {
   flex-shrink: 0;
 }
 
+.notes-menu {
+  position: relative;
+}
+
+.notes-menu-dropdown {
+  position: absolute;
+  top: calc(100% + 0.4rem);
+  right: 0;
+  z-index: 20;
+  min-width: 10.5rem;
+  background-color: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-card-hover);
+  padding: 0.35rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  transform-origin: top right;
+  transition: opacity 0.15s var(--ease), transform 0.15s var(--ease);
+}
+
+.notes-menu-dropdown.is-hidden {
+  display: flex !important;
+  opacity: 0;
+  transform: scale(0.94) translateY(-4px);
+  pointer-events: none;
+}
+
+.notes-menu-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 0.5rem 0.6rem;
+  background-color: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  color: var(--ink);
+  cursor: pointer;
+  transition: background-color 0.15s var(--ease), transform 0.15s var(--ease);
+}
+
+.notes-menu-item:hover {
+  background-color: var(--surface-sunken);
+  transform: translateX(2px);
+}
+
+.notes-menu-item:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: -2px;
+}
+
 .btn-icon {
   width: 2.3rem;
   height: 2.3rem;
@@ -268,6 +322,11 @@ header h1::before {
   background-color: var(--surface);
   border-color: var(--gold);
   color: var(--gold);
+  transform: translateY(-1px);
+}
+
+.btn-icon:active {
+  transform: scale(0.93);
 }
 
 .btn-icon:focus-visible {
@@ -327,6 +386,11 @@ header h1::before {
 .filter-chip:hover {
   border-color: var(--gold);
   color: var(--gold);
+  transform: translateY(-1px);
+}
+
+.filter-chip:active {
+  transform: scale(0.95);
 }
 
 .filter-chip.active {
@@ -352,6 +416,12 @@ header h1::before {
   background-color: transparent;
   border-color: var(--border-strong);
   color: var(--ink-soft);
+  transform: none;
+}
+
+.btn-icon:disabled:hover,
+.btn-icon:disabled:active {
+  transform: none;
 }
 
 /* ----------------------------------------------------------------------------
@@ -359,15 +429,56 @@ header h1::before {
 ---------------------------------------------------------------------------- */
 .bulk-actions-bar {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
+  flex-direction: column;
   gap: 0.6rem;
-  flex-wrap: wrap;
-  margin-top: 0.75rem;
+  margin-block: 0.75rem;
   padding: 0.6rem 0.7rem;
   background-color: var(--surface);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-sm);
+  max-height: 10rem;
+  overflow: hidden;
+  transition: max-height 0.25s var(--ease), opacity 0.2s var(--ease),
+    margin-top 0.25s var(--ease), padding 0.25s var(--ease),
+    border-width 0.2s var(--ease);
+}
+
+.bulk-actions-bar.is-hidden {
+  display: flex !important;
+  max-height: 0;
+  opacity: 0;
+  margin-top: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  border-width: 0;
+  pointer-events: none;
+}
+
+.bulk-actions-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.bulk-actions-header #selection-count-label {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--ink-soft);
+}
+
+.bulk-actions-header .btn-icon {
+  width: 1.7rem;
+  height: 1.7rem;
+  font-size: 0.9rem;
+}
+
+.bulk-actions-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  flex-wrap: wrap;
 }
 
 .bulk-select-all {
@@ -398,11 +509,23 @@ header h1::before {
   font-size: 1rem;
 }
 
+@keyframes checkboxFadeIn {
+  from {
+    opacity: 0;
+    transform: translateX(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
 .note-select-checkbox {
   display: flex;
   align-items: flex-start;
   padding-bottom: 0.5rem;
   cursor: pointer;
+  animation: checkboxFadeIn 0.18s var(--ease);
 }
 
 .note-select-checkbox input[type="checkbox"] {
@@ -445,6 +568,17 @@ header h1::before {
 }
 
 /* Fichas de catálogo */
+@keyframes noteItemIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 .note-item {
   background-color: var(--surface);
   border: 1px solid var(--border);
@@ -453,6 +587,7 @@ header h1::before {
   padding: 0.85rem 1rem;
   cursor: pointer;
   box-shadow: var(--shadow-card);
+  animation: noteItemIn 0.18s var(--ease);
   transition: transform 0.15s var(--ease), box-shadow 0.15s var(--ease),
     border-color 0.15s var(--ease), background-color 0.15s var(--ease);
 }
@@ -522,6 +657,11 @@ header h1::before {
 .favorite-toggle:hover {
   border-color: var(--gold);
   color: var(--gold);
+  transform: scale(1.1);
+}
+
+.favorite-toggle:active {
+  transform: scale(0.9);
 }
 
 .note-excerpt {
@@ -678,6 +818,10 @@ header h1::before {
 .btn:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
+}
+
+.btn:active:not(:disabled) {
+  transform: scale(0.97);
 }
 
 .btn-primary {
