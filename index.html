@@ -62,6 +62,61 @@
               >
                 ☆ Favoritas
               </button>
+              <button
+                id="selection-toggle-button"
+                class="filter-chip"
+                aria-pressed="false"
+              >
+                ☑ Seleccionar
+              </button>
+            </div>
+            <div id="bulk-actions-bar" class="bulk-actions-bar is-hidden">
+              <label class="bulk-select-all">
+                <input
+                  type="checkbox"
+                  id="select-all-checkbox"
+                  aria-label="Seleccionar todas las notas visibles"
+                />
+                <span id="selection-count-label">0 notas seleccionadas</span>
+              </label>
+              <div class="bulk-actions-buttons">
+                <button
+                  id="bulk-favorite-button"
+                  class="btn-icon"
+                  title="Marcar como favoritas"
+                  aria-label="Marcar como favoritas"
+                  disabled
+                >
+                  ★
+                </button>
+                <button
+                  id="bulk-unfavorite-button"
+                  class="btn-icon"
+                  title="Quitar de favoritas"
+                  aria-label="Quitar de favoritas"
+                  disabled
+                >
+                  ☆
+                </button>
+                <button
+                  id="bulk-export-button"
+                  class="btn-icon"
+                  title="Exportar selección"
+                  aria-label="Exportar selección"
+                  disabled
+                >
+                  ⭳
+                </button>
+                <button
+                  id="bulk-delete-button"
+                  class="btn-icon btn-icon-danger"
+                  title="Eliminar selección"
+                  aria-label="Eliminar selección"
+                  disabled
+                >
+                  🗑
+                </button>
+              </div>
             </div>
           </div>
           <div id="note-list" class="note-list"></div>

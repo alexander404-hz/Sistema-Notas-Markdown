@@ -14,6 +14,8 @@ let searchDebounceTimer;
 let lastLoadedContent = "";
 let searchQuery = "";
 let showFavoritesOnly = false;
+let selectionMode = false;
+let selectedNoteIds = new Set();
 
 // ----------------------------------------------------------------------------
 // VALIDACIÓN
@@ -380,6 +382,79 @@ function createPersistentNotesStore() {
     return Result.ok({ message: "Nota eliminada exitosamente", deletedId: id });
   }
 
+  /**
+   * Elimina varias notas del store de una sola vez.
+   * @param {string[]} ids - IDs de las notas a eliminar.
+   * @returns {Result} `{ message, deletedCount }` si al menos una fue eliminada.
+   */
+  function deleteNotes(ids) {
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return Result.fail("No hay notas seleccionadas");
+    }
+
+    const previousNotes = notes;
+    const idSet = new Set(ids);
+    const filteredNotes = notes.filter((note) => !idSet.has(note.id));
+    const deletedCount = previousNotes.length - filteredNotes.length;
+
+    if (deletedCount === 0) return Result.fail("Notas no encontradas");
+
+    notes = filteredNotes;
+
+    if (!saveToStorage(notes)) {
+      notes = previousNotes; // revertir: mantener las notas si no se pudo persistir el borrado
+      return Result.fail(
+        "No se pudieron eliminar las notas (almacenamiento no disponible)",
+      );
+    }
+
+    return Result.ok({
+      message:
+        deletedCount === 1
+          ? "1 nota eliminada exitosamente"
+          : `${deletedCount} notas eliminadas exitosamente`,
+      deletedCount,
+    });
+  }
+
+  /**
+   * Marca o desmarca como favoritas varias notas de una sola vez.
+   * @param {string[]} ids - IDs de las notas a actualizar.
+   * @param {boolean} favorite - `true` para marcarlas, `false` para desmarcarlas.
+   * @returns {Result} `{ updatedCount }` con la cantidad de notas afectadas.
+   */
+  function setFavoriteForNotes(ids, favorite) {
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return Result.fail("No hay notas seleccionadas");
+    }
+
+    const idSet = new Set(ids);
+    const affected = notes.filter((note) => idSet.has(note.id));
+
+    if (affected.length === 0) return Result.fail("Notas no encontradas");
+
+    const previousStates = affected.map((note) => ({ ...note }));
+    const now = Date.now();
+
+    affected.forEach((note) => {
+      note.favorite = !!favorite;
+      note.updatedAt = now;
+    });
+
+    if (!saveToStorage(notes)) {
+      // revertir: restaurar el estado previo de cada nota afectada
+      previousStates.forEach((previous) => {
+        const note = notes.find((note) => note.id === previous.id);
+        if (note) Object.assign(note, previous);
+      });
+      return Result.fail(
+        "No se pudo guardar los cambios (almacenamiento lleno o no disponible)",
+      );
+    }
+
+    return Result.ok({ updatedCount: affected.length });
+  }
+
   // --- Consultas ---
 
   /**
@@ -425,12 +500,30 @@ function createPersistentNotesStore() {
     return notes.length;
   }
 
+  /**
+   * Retorna las notas cuyo ID esté incluido en `ids`, en el mismo orden
+   * en que existen en el store. Útil para exportar una selección puntual.
+   * @param {string[]} ids - IDs de las notas a recuperar.
+   * @returns {Result} `{ notes }` con las notas encontradas.
+   */
+  function getNotesByIds(ids) {
+    if (!Array.isArray(ids)) return Result.fail("IDs inválidos");
+
+    const idSet = new Set(ids);
+    const found = notes.filter((note) => idSet.has(note.id));
+
+    return Result.ok({ notes: cloneNotes(found) });
+  }
+
   return {
     addNote,
     getNoteById,
     updateNote,
     deleteNote,
+    deleteNotes,
+    setFavoriteForNotes,
     getAllNotes,
+    getNotesByIds,
     queryNotes,
     getNotesCount,
   };
@@ -467,9 +560,32 @@ function renderNoteList(notes) {
   const fragment = document.createDocumentFragment();
 
   notes.forEach((note) => {
+    const isSelected = selectedNoteIds.has(note.id);
+
     const noteItem = document.createElement("div");
-    noteItem.className = `note-item ${currentNoteId === note.id ? "active" : ""}`;
+    noteItem.className = [
+      "note-item",
+      currentNoteId === note.id ? "active" : "",
+      selectionMode ? "selection-mode" : "",
+      isSelected ? "is-selected" : "",
+    ]
+      .filter(Boolean)
+      .join(" ");
     noteItem.dataset.id = note.id;
+
+    if (selectionMode) {
+      const checkboxLabel = document.createElement("label");
+      checkboxLabel.className = "note-select-checkbox";
+
+      const checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      checkbox.dataset.id = note.id;
+      checkbox.checked = isSelected;
+      checkbox.setAttribute("aria-label", `Seleccionar nota: ${note.title}`);
+
+      checkboxLabel.append(checkbox);
+      noteItem.append(checkboxLabel);
+    }
 
     const noteHeader = document.createElement("div");
     noteHeader.className = "note-item-header";
@@ -771,7 +887,34 @@ function initializeEventListeners(store) {
     }
   };
 
+  const toggleNoteSelection = (noteId, isNowSelected) => {
+    if (isNowSelected) {
+      selectedNoteIds.add(noteId);
+    } else {
+      selectedNoteIds.delete(noteId);
+    }
+
+    document
+      .querySelector(`.note-item[data-id="${noteId}"]`)
+      ?.classList.toggle("is-selected", isNowSelected);
+
+    updateBulkActionsUI();
+  };
+
   noteListContainer?.addEventListener("click", (event) => {
+    // En modo selección, un click en cualquier parte de la ficha (que no
+    // sea el checkbox, que ya maneja su propio "change") alterna la
+    // selección en vez de abrir la nota en el editor.
+    if (selectionMode) {
+      if (event.target.closest(".note-select-checkbox")) return;
+
+      const noteItem = event.target.closest(".note-item");
+      const checkbox = noteItem?.querySelector(".note-select-checkbox input");
+
+      if (checkbox) checkbox.click();
+      return;
+    }
+
     const favoriteButton = event.target.closest(".favorite-toggle");
 
     if (favoriteButton) {
@@ -782,6 +925,13 @@ function initializeEventListeners(store) {
     const noteItem = event.target.closest(".note-item");
 
     if (noteItem) return handleOpenNote(noteItem);
+  });
+
+  noteListContainer?.addEventListener("change", (event) => {
+    if (!event.target.matches(".note-select-checkbox input[type='checkbox']"))
+      return;
+
+    toggleNoteSelection(event.target.dataset.id, event.target.checked);
   });
 
   const editorTextArea = document.querySelector("#editor-textarea");
@@ -839,6 +989,182 @@ function initializeEventListeners(store) {
       : "☆ Solo favoritas";
 
     refreshNoteList();
+  });
+
+  // ----------------------------------------------------------------------
+  // SELECCIÓN MÚLTIPLE (eliminar, favoritos y exportar a discreción)
+  // ----------------------------------------------------------------------
+
+  const bulkActionsBar = document.querySelector("#bulk-actions-bar");
+  const selectionToggleButton = document.querySelector(
+    "#selection-toggle-button",
+  );
+  const selectAllCheckbox = document.querySelector("#select-all-checkbox");
+  const selectionCountLabel = document.querySelector(
+    "#selection-count-label",
+  );
+  const bulkFavoriteButton = document.querySelector("#bulk-favorite-button");
+  const bulkUnfavoriteButton = document.querySelector(
+    "#bulk-unfavorite-button",
+  );
+  const bulkExportButton = document.querySelector("#bulk-export-button");
+  const bulkDeleteButton = document.querySelector("#bulk-delete-button");
+
+  // Refleja en la UI cuántas notas hay seleccionadas, habilita/deshabilita
+  // los botones en lote, y sincroniza el estado del checkbox "todas".
+  const updateBulkActionsUI = () => {
+    const count = selectedNoteIds.size;
+
+    if (selectionCountLabel) {
+      selectionCountLabel.textContent =
+        count === 1 ? "1 nota seleccionada" : `${count} notas seleccionadas`;
+    }
+
+    [
+      bulkFavoriteButton,
+      bulkUnfavoriteButton,
+      bulkExportButton,
+      bulkDeleteButton,
+    ].forEach((button) => {
+      if (button) button.disabled = count === 0;
+    });
+
+    if (selectAllCheckbox) {
+      const visibleNotes = getVisibleNotes(store);
+      const visibleSelectedCount = visibleNotes.filter((note) =>
+        selectedNoteIds.has(note.id),
+      ).length;
+
+      selectAllCheckbox.checked =
+        visibleNotes.length > 0 &&
+        visibleSelectedCount === visibleNotes.length;
+      selectAllCheckbox.indeterminate =
+        visibleSelectedCount > 0 &&
+        visibleSelectedCount < visibleNotes.length;
+    }
+  };
+
+  // Entrar/salir del modo selección
+  selectionToggleButton?.addEventListener("click", () => {
+    selectionMode = !selectionMode;
+
+    if (!selectionMode) selectedNoteIds.clear();
+
+    selectionToggleButton.classList.toggle("active", selectionMode);
+    selectionToggleButton.setAttribute("aria-pressed", String(selectionMode));
+    selectionToggleButton.textContent = selectionMode
+      ? "✕ Cancelar"
+      : "☑ Seleccionar";
+
+    bulkActionsBar?.classList.toggle("is-hidden", !selectionMode);
+
+    refreshNoteList();
+    updateBulkActionsUI();
+  });
+
+  // Seleccionar/deseleccionar todas las notas visibles (respeta filtros)
+  selectAllCheckbox?.addEventListener("change", () => {
+    const visibleNotes = getVisibleNotes(store);
+
+    visibleNotes.forEach((note) => {
+      if (selectAllCheckbox.checked) {
+        selectedNoteIds.add(note.id);
+      } else {
+        selectedNoteIds.delete(note.id);
+      }
+    });
+
+    refreshNoteList();
+    updateBulkActionsUI();
+  });
+
+  // Marcar selección como favorita
+  bulkFavoriteButton?.addEventListener("click", () => {
+    const ids = Array.from(selectedNoteIds);
+    if (ids.length === 0) return;
+
+    const result = store.setFavoriteForNotes(ids, true);
+
+    if (!result.success) return showMessage(result.message, true);
+
+    showMessage(
+      result.data.updatedCount === 1
+        ? "1 nota marcada como favorita"
+        : `${result.data.updatedCount} notas marcadas como favoritas`,
+      false,
+    );
+    refreshNoteList();
+  });
+
+  // Quitar de favoritas la selección
+  bulkUnfavoriteButton?.addEventListener("click", () => {
+    const ids = Array.from(selectedNoteIds);
+    if (ids.length === 0) return;
+
+    const result = store.setFavoriteForNotes(ids, false);
+
+    if (!result.success) return showMessage(result.message, true);
+
+    showMessage(
+      result.data.updatedCount === 1
+        ? "1 nota quitada de favoritas"
+        : `${result.data.updatedCount} notas quitadas de favoritas`,
+      false,
+    );
+    refreshNoteList();
+  });
+
+  // Exportar solo las notas seleccionadas (una, varias o todas si se
+  // seleccionaron todas mediante el checkbox "todas")
+  bulkExportButton?.addEventListener("click", () => {
+    const ids = Array.from(selectedNoteIds);
+    if (ids.length === 0) return;
+
+    const result = store.getNotesByIds(ids);
+
+    if (!result.success) return showMessage(result.message, true);
+
+    exportNotesAsJSON(result.data.notes);
+    showMessage(
+      result.data.notes.length === 1 ? "Nota exportada" : "Notas exportadas",
+      false,
+    );
+  });
+
+  // Eliminar todas las notas seleccionadas de una vez
+  bulkDeleteButton?.addEventListener("click", () => {
+    const ids = Array.from(selectedNoteIds);
+    if (ids.length === 0) return;
+
+    const confirmMessage =
+      ids.length === 1
+        ? "¿Eliminar la nota seleccionada?"
+        : `¿Eliminar las ${ids.length} notas seleccionadas?`;
+
+    if (!confirm(confirmMessage)) return;
+
+    const result = store.deleteNotes(ids);
+
+    if (!result.success) return showMessage(result.message, true);
+
+    // Si la nota abierta en el editor estaba entre las eliminadas, cerramos
+    // el editor para no dejarlo mostrando una nota que ya no existe.
+    if (currentNoteId && ids.includes(currentNoteId)) {
+      const editorTextArea = document.querySelector("#editor-textarea");
+      if (editorTextArea) editorTextArea.value = "";
+
+      toggleEditorAndPreview(false);
+
+      currentNoteId = null;
+      lastLoadedContent = "";
+      updateDeleteButtonState();
+    }
+
+    showMessage(result.data.message, false);
+
+    selectedNoteIds.clear();
+    refreshNoteList();
+    updateBulkActionsUI();
   });
 }
 

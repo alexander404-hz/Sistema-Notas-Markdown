@@ -340,6 +340,90 @@ header h1::before {
   outline-offset: 2px;
 }
 
+.btn-icon-danger:hover {
+  background-color: var(--danger);
+  border-color: var(--danger);
+  color: var(--surface);
+}
+
+.btn-icon:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  background-color: transparent;
+  border-color: var(--border-strong);
+  color: var(--ink-soft);
+}
+
+/* ----------------------------------------------------------------------------
+   SELECCIÓN MÚLTIPLE
+---------------------------------------------------------------------------- */
+.bulk-actions-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  margin-top: 0.75rem;
+  padding: 0.6rem 0.7rem;
+  background-color: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+}
+
+.bulk-select-all {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+
+.bulk-select-all input[type="checkbox"] {
+  width: 1rem;
+  height: 1rem;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.bulk-actions-buttons {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.bulk-actions-buttons .btn-icon {
+  width: 2rem;
+  height: 2rem;
+  font-size: 1rem;
+}
+
+.note-select-checkbox {
+  display: flex;
+  align-items: flex-start;
+  padding-bottom: 0.5rem;
+  cursor: pointer;
+}
+
+.note-select-checkbox input[type="checkbox"] {
+  width: 1.05rem;
+  height: 1.05rem;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.note-item.is-selected {
+  border-color: var(--accent);
+  border-left-color: var(--accent);
+  background-color: var(--accent-soft);
+}
+
+.note-item.selection-mode .note-item-header,
+.note-item.selection-mode .note-excerpt,
+.note-item.selection-mode .note-date {
+  pointer-events: none;
+}
+
 .note-list {
   flex: 1;
   overflow-y: auto;
