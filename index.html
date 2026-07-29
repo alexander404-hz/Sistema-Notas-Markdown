@@ -27,14 +27,24 @@
           <div class="sidebar-header">
             <div class="sidebar-title-row">
               <h2>Mis Notas</h2>
-              <button
-                id="export-notes-button"
-                class="btn-icon"
-                title="Exportar notas"
-                aria-label="Exportar notas"
-              >
-                ⭳
-              </button>
+              <div class="sidebar-title-actions">
+                <button
+                  id="new-note-button"
+                  class="btn-icon btn-icon-primary"
+                  title="Nueva nota"
+                  aria-label="Nueva nota"
+                >
+                  +
+                </button>
+                <button
+                  id="export-notes-button"
+                  class="btn-icon"
+                  title="Exportar notas"
+                  aria-label="Exportar notas"
+                >
+                  ⭳
+                </button>
+              </div>
             </div>
             <input
               type="search"
@@ -43,9 +53,6 @@
               placeholder="Buscar notas..."
               aria-label="Buscar notas"
             />
-            <button id="new-note-button" class="btn btn-primary">
-              + Nueva Nota
-            </button>
             <div class="filters-bar">
               <span class="filters-label">Filtros</span>
               <button

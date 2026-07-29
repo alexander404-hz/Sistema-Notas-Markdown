@@ -240,6 +240,13 @@ header h1::before {
   flex-shrink: 0;
 }
 
+.sidebar-title-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-shrink: 0;
+}
+
 .btn-icon {
   width: 2.3rem;
   height: 2.3rem;
@@ -268,8 +275,21 @@ header h1::before {
   outline-offset: 2px;
 }
 
-.sidebar-header .btn {
-  margin-bottom: 0;
+.btn-icon-primary {
+  background-color: var(--accent);
+  border-color: var(--accent);
+  color: var(--surface);
+  font-weight: 600;
+}
+
+.btn-icon-primary:hover {
+  background-color: var(--accent-hover);
+  border-color: var(--accent-hover);
+  color: var(--surface);
+}
+
+.btn-icon-primary:focus-visible {
+  outline-color: var(--accent);
 }
 
 .filters-bar {
