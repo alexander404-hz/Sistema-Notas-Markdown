@@ -11,10 +11,7 @@ let currentNoteId = null;
 let messageTimer;
 let previewDebounceTimer;
 let searchDebounceTimer;
-// Guarda el contenido tal como fue cargado en el editor, para poder detectar
-// cambios sin guardar (ver hasUnsavedChanges()).
 let lastLoadedContent = "";
-// Filtros activos de la lista de notas (búsqueda de texto y "solo favoritas").
 let searchQuery = "";
 let showFavoritesOnly = false;
 
@@ -111,6 +108,28 @@ const Result = {
 // Copia superficial del arreglo de notas para evitar mutaciones externas al store.
 const cloneNotes = (notesToClone) => notesToClone.map((note) => ({ ...note }));
 
+/**
+ * Exporta un arreglo de notas como archivo .json descargable.
+ * Usa la API del navegador (Blob + <a download>), no requiere backend.
+ * @param {Array} notes - Notas a exportar.
+ */
+function exportNotesAsJSON(notes) {
+  const blob = new Blob([JSON.stringify(notes, null, 2)], {
+    type: "application/json",
+  });
+  const url = URL.createObjectURL(blob);
+
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `notas-markdown-${new Date().toISOString().slice(0, 10)}.json`;
+
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+
+  URL.revokeObjectURL(url);
+}
+
 // --------------------------------------------
 // GENERACIÓN DE ID ÚNICO
 // --------------------------------------------
@@ -123,7 +142,10 @@ const cloneNotes = (notesToClone) => notesToClone.map((note) => ({ ...note }));
  * @returns {string} ID único.
  */
 function generateId() {
-  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+  if (
+    typeof crypto !== "undefined" &&
+    typeof crypto.randomUUID === "function"
+  ) {
     return crypto.randomUUID();
   }
 
@@ -175,8 +197,6 @@ function saveToStorage(notes) {
     localStorage.setItem(STORAGE_KEY, notesJSON);
     return true;
   } catch (error) {
-    // Puede fallar por cuota excedida (QuotaExceededError), modo privado
-    // estricto en algunos navegadores, o localStorage deshabilitado.
     console.error("Error al guardar notas en localStorage:", error);
     return false;
   }
@@ -248,7 +268,9 @@ function createPersistentNotesStore() {
 
     if (!saveToStorage(notes)) {
       notes.pop(); // revertir: no dejar el store en memoria desincronizado del storage
-      return Result.fail("No se pudo guardar la nota (almacenamiento lleno o no disponible)");
+      return Result.fail(
+        "No se pudo guardar la nota (almacenamiento lleno o no disponible)",
+      );
     }
 
     return Result.ok({ note: { ...newNote } });
@@ -324,7 +346,9 @@ function createPersistentNotesStore() {
 
     if (!saveToStorage(notes)) {
       Object.assign(note, previousState); // revertir cambios en memoria
-      return Result.fail("No se pudo guardar los cambios (almacenamiento lleno o no disponible)");
+      return Result.fail(
+        "No se pudo guardar los cambios (almacenamiento lleno o no disponible)",
+      );
     }
 
     return Result.ok({ note: { ...note } });
@@ -350,7 +374,9 @@ function createPersistentNotesStore() {
 
     if (!saveToStorage(notes)) {
       notes = previousNotes; // revertir: mantener la nota si no se pudo persistir el borrado
-      return Result.fail("No se pudo eliminar la nota (almacenamiento no disponible)");
+      return Result.fail(
+        "No se pudo eliminar la nota (almacenamiento no disponible)",
+      );
     }
 
     return Result.ok({ message: "Nota eliminada exitosamente", deletedId: id });
@@ -536,24 +562,15 @@ function renderEditor(note) {
 }
 
 /**
- * Indica si el editor tiene cambios sin guardar respecto a la última
- * nota cargada (o respecto al estado vacío, si es una nota nueva).
- * @returns {boolean}
- */
-function hasUnsavedChanges() {
-  const editorTextArea = document.querySelector("#editor-textarea");
-  if (!editorTextArea) return false;
-
-  return editorTextArea.value !== lastLoadedContent;
-}
-
-/**
  * Si hay cambios sin guardar, pide confirmación al usuario antes de
  * descartarlos (por ejemplo, al cambiar de nota o crear una nueva).
  * @returns {boolean} `true` si es seguro continuar (no hay cambios o el usuario confirmó descartarlos).
  */
 function confirmDiscardChangesIfNeeded() {
-  if (!hasUnsavedChanges()) return true;
+  const editorTextArea = document.querySelector("#editor-textarea");
+  if (!editorTextArea) return;
+
+  if (editorTextArea.value === lastLoadedContent) return true;
   return confirm("Tenés cambios sin guardar. ¿Querés descartarlos?");
 }
 
@@ -604,19 +621,6 @@ function renderPreview(content) {
   }
 
   previewSection.innerHTML = renderMarkdown(content);
-}
-
-/**
- * Versión con debounce de renderPreview, para no recalcular el markdown
- * en cada pulsación de tecla mientras el usuario escribe.
- * @param {string} content - Contenido markdown a renderizar.
- */
-function renderPreviewDebounced(content) {
-  clearTimeout(previewDebounceTimer);
-  previewDebounceTimer = setTimeout(
-    () => renderPreview(content),
-    PREVIEW_DEBOUNCE_MS,
-  );
 }
 
 /**
@@ -724,7 +728,7 @@ function initializeEventListeners(store) {
       );
 
       currentNoteId = result.data?.note?.id || currentNoteId;
-      lastLoadedContent = content; // ya no hay cambios sin guardar
+      lastLoadedContent = content;
 
       updateDeleteButtonState();
       refreshNoteList();
@@ -817,11 +821,14 @@ function initializeEventListeners(store) {
     }
   });
 
-  //Renderizar el textArea al preview de markdown (con debounce)
   const editorTextArea = document.querySelector("#editor-textarea");
 
   editorTextArea?.addEventListener("input", () => {
-    renderPreviewDebounced(editorTextArea.value);
+    clearTimeout(previewDebounceTimer);
+    previewDebounceTimer = setTimeout(
+      () => renderPreview(editorTextArea.value),
+      PREVIEW_DEBOUNCE_MS,
+    );
   });
 
   //Exportar notas
@@ -870,28 +877,6 @@ function initializeEventListeners(store) {
 
     refreshNoteList();
   });
-}
-
-/**
- * Exporta un arreglo de notas como archivo .json descargable.
- * Usa la API del navegador (Blob + <a download>), no requiere backend.
- * @param {Array} notes - Notas a exportar.
- */
-function exportNotesAsJSON(notes) {
-  const blob = new Blob([JSON.stringify(notes, null, 2)], {
-    type: "application/json",
-  });
-  const url = URL.createObjectURL(blob);
-
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = `notas-markdown-${new Date().toISOString().slice(0, 10)}.json`;
-
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-
-  URL.revokeObjectURL(url);
 }
 
 // ----------------------------------------------------------------------------
