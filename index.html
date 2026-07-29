@@ -17,8 +17,22 @@
         <aside class="sidebar">
           <div class="sidebar-header">
             <h2>Mis Notas</h2>
+            <input
+              type="search"
+              id="search-input"
+              class="search-input"
+              placeholder="Buscar notas..."
+              aria-label="Buscar notas"
+            />
             <button id="new-note-button" class="btn btn-primary">
               Nueva Nota
+            </button>
+            <button
+              id="favorites-toggle-button"
+              class="btn btn-outline"
+              aria-pressed="false"
+            >
+              ☆ Solo favoritas
             </button>
             <button id="delete-note-button" class="btn btn-danger">
               Eliminar
@@ -54,8 +68,16 @@
         </section>
       </div>
     </div>
-    <script src="https://cdn.jsdelivr.net/npm/markdown-it@14.0.0/dist/markdown-it.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/markdown-it-task-lists@2.1.1/dist/markdown-it-task-lists.min.js"></script>
+    <script
+      src="https://cdn.jsdelivr.net/npm/markdown-it@14.0.0/dist/markdown-it.min.js"
+      integrity="sha384-m4eAATWFHwurgWQTBxFRh5346JXxGTucT+lJH2TcxGrE+vNBENJGasyBNnLc23ft"
+      crossorigin="anonymous"
+    ></script>
+    <script
+      src="https://cdn.jsdelivr.net/npm/markdown-it-task-lists@2.1.1/dist/markdown-it-task-lists.min.js"
+      integrity="sha384-FKY5Inm02LmR+QgGl8g9DxuTQ+UuOo3tWGSVd7ZmWSPl9DyYsmi7kE3tTjC3ZEow"
+      crossorigin="anonymous"
+    ></script>
     <script type="module" src="app.js"></script>
   </body>
 </html>

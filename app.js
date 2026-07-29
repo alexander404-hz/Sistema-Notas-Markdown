@@ -3,8 +3,20 @@
 // =============================================================================
 
 const STORAGE_KEY = "markdown-notes";
+const EXCERPT_MAX_LEN = 100;
+const PREVIEW_DEBOUNCE_MS = 200;
+const SEARCH_DEBOUNCE_MS = 200;
+
 let currentNoteId = null;
 let messageTimer;
+let previewDebounceTimer;
+let searchDebounceTimer;
+// Guarda el contenido tal como fue cargado en el editor, para poder detectar
+// cambios sin guardar (ver hasUnsavedChanges()).
+let lastLoadedContent = "";
+// Filtros activos de la lista de notas (búsqueda de texto y "solo favoritas").
+let searchQuery = "";
+let showFavoritesOnly = false;
 
 // ----------------------------------------------------------------------------
 // VALIDACIÓN
@@ -28,6 +40,15 @@ function isValidString(str) {
   return str && typeof str === "string" && str.trim().length > 0;
 }
 
+/**
+ * Valida que el valor sea un ID de nota válido (string no vacío).
+ * @param {string} id - ID a validar.
+ * @returns {boolean} `true` si es un ID válido, `false` en caso contrario.
+ */
+function isValidId(id) {
+  return typeof id === "string" && id.length > 0;
+}
+
 // ----------------------------------------------------------------------------
 // TEXTO
 // ----------------------------------------------------------------------------
@@ -48,13 +69,13 @@ function deriveTitle(content) {
 /**
  * Exrtrae un resumen corto del contenido.
  * @param {string} content - Contenido de la nota.
- * @param {number} [maxLen] - Límite de caracteres del resumen. Por defecto: 70.
+ * @param {number} [maxLen] - Límite de caracteres del resumen. Por defecto: EXCERPT_MAX_LEN.
  * @returns {string} Resumen del contenido, truncado con "..." si supera el límite.
  */
 function deriveExcerpt(content, maxLen) {
   if (!isValidString(content)) return "";
 
-  const limit = isValidNumber(maxLen) ? maxLen : 70;
+  const limit = isValidNumber(maxLen) ? maxLen : EXCERPT_MAX_LEN;
   const clean = content.trim();
 
   return clean.length <= limit ? clean : clean.slice(0, limit) + "...";
@@ -95,12 +116,18 @@ const cloneNotes = (notesToClone) => notesToClone.map((note) => ({ ...note }));
 // --------------------------------------------
 
 /**
- * Genera un ID único basado en la fecha actual
- * @returns {number} Timestamp en milisegundos desde 1970
+ * Genera un ID único (UUID v4) para una nota.
+ * Usa `crypto.randomUUID()` cuando está disponible; si no (navegadores muy
+ * viejos o contextos no seguros), recurre a un fallback basado en timestamp
+ * + número aleatorio para evitar colisiones.
+ * @returns {string} ID único.
  */
 function generateId() {
-  const timestamp = Date.now();
-  return timestamp;
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
 // ----------------------------------------------------------------------------
@@ -122,7 +149,7 @@ function createNote(content, title) {
     id: generateId(),
     content: content.trim(),
     title: isValidString(title) ? title : deriveTitle(content),
-    excerpt: deriveExcerpt(content, 100),
+    excerpt: deriveExcerpt(content, EXCERPT_MAX_LEN),
     createdAt: now,
     updatedAt: now,
     favorite: false,
@@ -140,11 +167,19 @@ function createNote(content, title) {
 function saveToStorage(notes) {
   if (!Array.isArray(notes)) {
     console.error("No se pueden guardar notas, datos inválidos");
-    return;
+    return false;
   }
 
-  const notesJSON = JSON.stringify(notes);
-  localStorage.setItem(STORAGE_KEY, notesJSON);
+  try {
+    const notesJSON = JSON.stringify(notes);
+    localStorage.setItem(STORAGE_KEY, notesJSON);
+    return true;
+  } catch (error) {
+    // Puede fallar por cuota excedida (QuotaExceededError), modo privado
+    // estricto en algunos navegadores, o localStorage deshabilitado.
+    console.error("Error al guardar notas en localStorage:", error);
+    return false;
+  }
 }
 
 /**
@@ -210,7 +245,11 @@ function createPersistentNotesStore() {
     if (!newNote) return Result.fail("Error al crear la nota");
 
     notes.push(newNote);
-    saveToStorage(notes);
+
+    if (!saveToStorage(notes)) {
+      notes.pop(); // revertir: no dejar el store en memoria desincronizado del storage
+      return Result.fail("No se pudo guardar la nota (almacenamiento lleno o no disponible)");
+    }
 
     return Result.ok({ note: { ...newNote } });
   }
@@ -219,11 +258,11 @@ function createPersistentNotesStore() {
 
   /**
    * Busca una nota por su ID.
-   * @param {number} id - ID numérico de la nota.
+   * @param {string} id - ID (UUID) de la nota.
    * @returns {Result} `{ note }` con la nota encontrada.
    */
   function getNoteById(id) {
-    if (!isValidNumber(id)) return Result.fail("ID inválido");
+    if (!isValidId(id)) return Result.fail("ID inválido");
 
     const found = notes.find((note) => note.id === id);
 
@@ -242,7 +281,7 @@ function createPersistentNotesStore() {
    *   el título también se re-deriva automáticamente.
    * - Si se pasa un `title` explícito en `updates`, este tiene prioridad.
    *
-   * @param {number} id - ID de la nota a actualizar.
+   * @param {string} id - ID (UUID) de la nota a actualizar.
    * @param {{
    * content?: string,
    * title?: string,
@@ -251,10 +290,13 @@ function createPersistentNotesStore() {
    * @returns {Result} `{ note }` con la nota actualizada.
    */
   function updateNote(id, updates) {
-    if (!isValidNumber(id)) return Result.fail("ID inválido");
+    if (!isValidId(id)) return Result.fail("ID inválido");
 
     const note = notes.find((note) => note.id === id);
     if (!note) return Result.fail("Nota no encontrada");
+
+    // Snapshot para poder revertir si falla el guardado en storage.
+    const previousState = { ...note };
 
     if (updates.content !== undefined) {
       if (!isValidString(updates.content))
@@ -263,7 +305,7 @@ function createPersistentNotesStore() {
       const hasAutoTitle = note.title === deriveTitle(note.content);
 
       note.content = updates.content.trim();
-      note.excerpt = deriveExcerpt(updates.content, 100);
+      note.excerpt = deriveExcerpt(updates.content, EXCERPT_MAX_LEN);
 
       if (updates.title !== undefined) {
         note.title = updates.title.trim();
@@ -279,7 +321,11 @@ function createPersistentNotesStore() {
     }
 
     note.updatedAt = Date.now();
-    saveToStorage(notes);
+
+    if (!saveToStorage(notes)) {
+      Object.assign(note, previousState); // revertir cambios en memoria
+      return Result.fail("No se pudo guardar los cambios (almacenamiento lleno o no disponible)");
+    }
 
     return Result.ok({ note: { ...note } });
   }
@@ -288,18 +334,24 @@ function createPersistentNotesStore() {
 
   /**
    * Elimina una nota del store por su ID.
-   * @param {number} id - ID de la nota a eliminar.
+   * @param {string} id - ID (UUID) de la nota a eliminar.
    * @returns {Result} `{ message, deletedId }` si fue eliminada.
    */
   function deleteNote(id) {
-    if (!isValidNumber(id)) return Result.fail("ID inválido");
+    if (!isValidId(id)) return Result.fail("ID inválido");
 
-    const prevLength = notes.length;
-    notes = notes.filter((note) => note.id !== id);
+    const previousNotes = notes;
+    const filteredNotes = notes.filter((note) => note.id !== id);
 
-    if (notes.length === prevLength) return Result.fail("Nota no encontrada");
+    if (filteredNotes.length === previousNotes.length)
+      return Result.fail("Nota no encontrada");
 
-    saveToStorage(notes);
+    notes = filteredNotes;
+
+    if (!saveToStorage(notes)) {
+      notes = previousNotes; // revertir: mantener la nota si no se pudo persistir el borrado
+      return Result.fail("No se pudo eliminar la nota (almacenamiento no disponible)");
+    }
 
     return Result.ok({ message: "Nota eliminada exitosamente", deletedId: id });
   }
@@ -394,11 +446,15 @@ function renderNoteList(notes) {
     return;
   }
 
-  noteListElement.innerHTML = ""; //ver despues que hace
+  noteListElement.innerHTML = "";
 
   if (!Array.isArray(notes) || notes.length === 0) {
-    noteListElement.innerHTML =
-      '<p class="empty-message">No hay notas aún. Crea una nota para empezar.</p>';
+    const emptyText =
+      searchQuery.trim() !== "" || showFavoritesOnly
+        ? "No hay notas que coincidan con el filtro actual."
+        : "No hay notas aún. Crea una nota para empezar.";
+
+    noteListElement.innerHTML = `<p class="empty-message">${emptyText}</p>`;
     return;
   }
 
@@ -409,8 +465,24 @@ function renderNoteList(notes) {
     noteItem.className = `note-item ${currentNoteId === note.id ? "active" : ""}`;
     noteItem.dataset.id = note.id;
 
+    const noteHeader = document.createElement("div");
+    noteHeader.className = "note-item-header";
+
     const noteTitle = document.createElement("h3");
     noteTitle.textContent = note.title;
+
+    const favoriteButton = document.createElement("button");
+    favoriteButton.type = "button";
+    favoriteButton.className = `favorite-toggle ${note.favorite ? "is-favorite" : ""}`;
+    favoriteButton.dataset.id = note.id;
+    favoriteButton.textContent = note.favorite ? "★" : "☆";
+    favoriteButton.setAttribute("aria-pressed", String(!!note.favorite));
+    favoriteButton.setAttribute(
+      "aria-label",
+      note.favorite ? "Quitar de favoritas" : "Marcar como favorita",
+    );
+
+    noteHeader.append(noteTitle, favoriteButton);
 
     const noteExcerpt = document.createElement("p");
     noteExcerpt.textContent = note.excerpt;
@@ -421,7 +493,7 @@ function renderNoteList(notes) {
     noteDate.textContent = date.toLocaleDateString();
     noteDate.className = "note-date";
 
-    noteItem.append(noteTitle, noteExcerpt, noteDate);
+    noteItem.append(noteHeader, noteExcerpt, noteDate);
     fragment.append(noteItem);
   });
 
@@ -456,9 +528,43 @@ function renderEditor(note) {
   toggleEditorAndPreview(true);
 
   editorTextArea.value = note?.content || "";
-  currentNoteId = note?.id || "";
+  currentNoteId = note?.id ?? null;
+  lastLoadedContent = editorTextArea.value;
 
+  updateDeleteButtonState();
   renderPreview(editorTextArea.value);
+}
+
+/**
+ * Indica si el editor tiene cambios sin guardar respecto a la última
+ * nota cargada (o respecto al estado vacío, si es una nota nueva).
+ * @returns {boolean}
+ */
+function hasUnsavedChanges() {
+  const editorTextArea = document.querySelector("#editor-textarea");
+  if (!editorTextArea) return false;
+
+  return editorTextArea.value !== lastLoadedContent;
+}
+
+/**
+ * Si hay cambios sin guardar, pide confirmación al usuario antes de
+ * descartarlos (por ejemplo, al cambiar de nota o crear una nueva).
+ * @returns {boolean} `true` si es seguro continuar (no hay cambios o el usuario confirmó descartarlos).
+ */
+function confirmDiscardChangesIfNeeded() {
+  if (!hasUnsavedChanges()) return true;
+  return confirm("Tenés cambios sin guardar. ¿Querés descartarlos?");
+}
+
+/**
+ * Habilita o deshabilita el botón de eliminar según si hay una nota seleccionada.
+ */
+function updateDeleteButtonState() {
+  const deleteNoteButton = document.querySelector("#delete-note-button");
+  if (!deleteNoteButton) return;
+
+  deleteNoteButton.disabled = !currentNoteId;
 }
 
 /**
@@ -501,6 +607,19 @@ function renderPreview(content) {
 }
 
 /**
+ * Versión con debounce de renderPreview, para no recalcular el markdown
+ * en cada pulsación de tecla mientras el usuario escribe.
+ * @param {string} content - Contenido markdown a renderizar.
+ */
+function renderPreviewDebounced(content) {
+  clearTimeout(previewDebounceTimer);
+  previewDebounceTimer = setTimeout(
+    () => renderPreview(content),
+    PREVIEW_DEBOUNCE_MS,
+  );
+}
+
+/**
  * Muestra un mensaje de error o éxito
  * @param {string} message - Mensaje a mostrar
  * @param {boolean} isError - true si es error, false si es éxito
@@ -527,6 +646,38 @@ function showMessage(message, isError) {
 }
 
 // ----------------------------------------------------------------------------
+// FILTROS DE LA LISTA (búsqueda + favoritas)
+// ----------------------------------------------------------------------------
+
+/**
+ * Calcula qué notas mostrar en la lista según los filtros activos
+ * (`searchQuery` y `showFavoritesOnly`), combinando las funciones del store.
+ * @param {Object} store - Store de notas.
+ * @returns {Array} Notas visibles, ordenadas de más reciente a más antigua.
+ */
+function getVisibleNotes(store) {
+  const query = searchQuery.trim();
+  let notes;
+
+  if (showFavoritesOnly) {
+    notes = store.getFavoriteNotes().data.notes;
+
+    if (query !== "") {
+      const normalizedQuery = query.toLowerCase();
+      notes = notes.filter((note) =>
+        `${note.title} ${note.content}`.toLowerCase().includes(normalizedQuery),
+      );
+    }
+  } else if (query !== "") {
+    notes = store.searchNotes(query).data.notes;
+  } else {
+    notes = store.getNotesOrderedByDate().data.notes;
+  }
+
+  return notes.sort((a, b) => b.updatedAt - a.updatedAt);
+}
+
+// ----------------------------------------------------------------------------
 // EVENTOS
 // ----------------------------------------------------------------------------
 
@@ -538,17 +689,15 @@ function showMessage(message, isError) {
 function initializeEventListeners(store) {
   // Helper para refrescar la lista
   const refreshNoteList = () => {
-    const {
-      data: { notes },
-    } = store.getNotesOrderedByDate();
-
-    renderNoteList(notes);
+    renderNoteList(getVisibleNotes(store));
   };
 
   //Nota Nueva
   const newNoteButton = document.querySelector("#new-note-button");
 
   newNoteButton?.addEventListener("click", () => {
+    if (!confirmDiscardChangesIfNeeded()) return;
+
     currentNoteId = null;
     refreshNoteList();
     renderEditor(null);
@@ -575,7 +724,9 @@ function initializeEventListeners(store) {
       );
 
       currentNoteId = result.data?.note?.id || currentNoteId;
+      lastLoadedContent = content; // ya no hay cambios sin guardar
 
+      updateDeleteButtonState();
       refreshNoteList();
     } else {
       showMessage(result.message, true);
@@ -596,10 +747,15 @@ function initializeEventListeners(store) {
       if (result.success) {
         showMessage("Nota eliminada", false);
 
+        const editorTextArea = document.querySelector("#editor-textarea");
+        if (editorTextArea) editorTextArea.value = "";
+
         toggleEditorAndPreview(false);
 
         currentNoteId = null;
+        lastLoadedContent = "";
 
+        updateDeleteButtonState();
         refreshNoteList();
       } else {
         showMessage(result.message, true);
@@ -607,16 +763,48 @@ function initializeEventListeners(store) {
     }
   });
 
-  //Editar nota
-
+  //Marcar/desmarcar nota como favorita
   const noteListContainer = document.querySelector("#note-list");
 
   noteListContainer?.addEventListener("click", (event) => {
+    const favoriteButton = event.target.closest(".favorite-toggle");
+
+    if (!favoriteButton) return;
+
+    // Evita que el click también dispare la apertura de la nota en el editor.
+    event.stopPropagation();
+
+    const noteId = favoriteButton.dataset.id;
+    const currentNote = store.getNoteById(noteId);
+
+    if (!currentNote.success) {
+      return showMessage(currentNote.message, true);
+    }
+
+    const result = store.updateNote(noteId, {
+      favorite: !currentNote.data.note.favorite,
+    });
+
+    if (result.success) {
+      refreshNoteList();
+    } else {
+      showMessage(result.message, true);
+    }
+  });
+
+  //Editar nota
+
+  noteListContainer?.addEventListener("click", (event) => {
+    if (event.target.closest(".favorite-toggle")) return;
+
     const noteItem = event.target.closest(".note-item");
 
     if (!noteItem) return;
 
-    const noteId = Number(noteItem.dataset.id);
+    if (!confirmDiscardChangesIfNeeded()) return;
+
+    // El ID de la nota es un string (UUID), no un número — no convertir con Number().
+    const noteId = noteItem.dataset.id;
 
     const result = store.getNoteById(noteId);
 
@@ -629,13 +817,81 @@ function initializeEventListeners(store) {
     }
   });
 
-  //Renderizar el textArea al preview de markdown
+  //Renderizar el textArea al preview de markdown (con debounce)
   const editorTextArea = document.querySelector("#editor-textarea");
 
   editorTextArea?.addEventListener("input", () => {
-    const content = editorTextArea.value;
-    renderPreview(content);
+    renderPreviewDebounced(editorTextArea.value);
   });
+
+  //Exportar notas
+  const exportNotesButton = document.querySelector("#export-notes-button");
+
+  exportNotesButton?.addEventListener("click", () => {
+    const {
+      data: { notes },
+    } = store.getAllNotes();
+
+    if (notes.length === 0) {
+      return showMessage("No hay notas para exportar", true);
+    }
+
+    exportNotesAsJSON(notes);
+    showMessage("Notas exportadas", false);
+  });
+
+  //Buscar notas
+  const searchInput = document.querySelector("#search-input");
+
+  searchInput?.addEventListener("input", () => {
+    clearTimeout(searchDebounceTimer);
+    searchDebounceTimer = setTimeout(() => {
+      searchQuery = searchInput.value;
+      refreshNoteList();
+    }, SEARCH_DEBOUNCE_MS);
+  });
+
+  //Filtrar solo favoritas
+  const favoritesToggleButton = document.querySelector(
+    "#favorites-toggle-button",
+  );
+
+  favoritesToggleButton?.addEventListener("click", () => {
+    showFavoritesOnly = !showFavoritesOnly;
+
+    favoritesToggleButton.classList.toggle("active", showFavoritesOnly);
+    favoritesToggleButton.setAttribute(
+      "aria-pressed",
+      String(showFavoritesOnly),
+    );
+    favoritesToggleButton.textContent = showFavoritesOnly
+      ? "★ Solo favoritas"
+      : "☆ Solo favoritas";
+
+    refreshNoteList();
+  });
+}
+
+/**
+ * Exporta un arreglo de notas como archivo .json descargable.
+ * Usa la API del navegador (Blob + <a download>), no requiere backend.
+ * @param {Array} notes - Notas a exportar.
+ */
+function exportNotesAsJSON(notes) {
+  const blob = new Blob([JSON.stringify(notes, null, 2)], {
+    type: "application/json",
+  });
+  const url = URL.createObjectURL(blob);
+
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `notas-markdown-${new Date().toISOString().slice(0, 10)}.json`;
+
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+
+  URL.revokeObjectURL(url);
 }
 
 // ----------------------------------------------------------------------------
@@ -645,14 +901,13 @@ function initializeEventListeners(store) {
 /**
  * Función principal que inicializa la aplicación
  */
-function initialzeApp() {
+function initializeApp() {
   const store = createPersistentNotesStore();
 
-  const result = store.getNotesOrderedByDate();
-
-  renderNoteList(result.data.notes);
+  renderNoteList(getVisibleNotes(store));
 
   toggleEditorAndPreview(false);
+  updateDeleteButtonState();
 
   initializeEventListeners(store);
 
@@ -661,5 +916,5 @@ function initialzeApp() {
 }
 
 document.addEventListener("DOMContentLoaded", () => {
-  initialzeApp();
+  initializeApp();
 });
