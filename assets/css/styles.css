@@ -257,7 +257,8 @@ header h1::before {
   top: calc(100% + 0.4rem);
   right: 0;
   z-index: 20;
-  min-width: 10.5rem;
+  min-width: 13rem;
+  max-width: calc(100vw - 2rem);
   background-color: var(--surface);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-sm);
@@ -289,6 +290,7 @@ header h1::before {
   font-size: 0.8rem;
   color: var(--ink);
   cursor: pointer;
+  white-space: nowrap;
   transition: background-color 0.15s var(--ease), transform 0.15s var(--ease);
 }
 
@@ -439,6 +441,7 @@ header h1::before {
   left: 0;
   z-index: 20;
   min-width: 12rem;
+  max-width: calc(100vw - 2rem);
   background-color: var(--surface);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-sm);
@@ -566,6 +569,7 @@ header h1::before {
   right: 0;
   z-index: 20;
   min-width: 15rem;
+  max-width: calc(100vw - 2rem);
   background-color: var(--surface);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-sm);
@@ -802,6 +806,19 @@ header h1::before {
   animation: noteItemIn 0.18s var(--ease);
   transition: transform 0.15s var(--ease), box-shadow 0.15s var(--ease),
     border-color 0.15s var(--ease), background-color 0.15s var(--ease);
+  /* Evita el menú contextual / selección de texto nativa del navegador al
+     mantener presionado en mobile, para que el long-press active nuestro
+     propio modo de selección en su lugar. */
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+  touch-action: manipulation;
+}
+
+.note-item.is-long-pressing {
+  transform: scale(0.97);
+  border-color: var(--gold);
+  box-shadow: var(--shadow-card);
 }
 
 .note-item:hover {
@@ -932,6 +949,22 @@ header h1::before {
   display: flex;
   flex-direction: column;
   gap: 0.2rem;
+  min-width: 0;
+}
+
+.editor-header-left {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  min-width: 0;
+  flex-shrink: 1;
+}
+
+/* Oculto en escritorio: la lista de notas ya está siempre visible al lado.
+   Solo se muestra en mobile (ver breakpoint más abajo). */
+.editor-back-button {
+  display: none;
+  flex-shrink: 0;
 }
 
 .editor-meta {
@@ -939,6 +972,9 @@ header h1::before {
   font-style: italic;
   font-size: 0.78rem;
   color: var(--ink-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .editor-header h2,
@@ -953,6 +989,12 @@ header h1::before {
   gap: 0.5rem;
 }
 
+.editor-title-group h2 {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .editor-header h2::before {
   content: "";
   display: inline-block;
@@ -960,6 +1002,7 @@ header h1::before {
   height: 8px;
   background-color: var(--accent);
   border-radius: 2px;
+  flex-shrink: 0;
 }
 
 .preview-header h2::before {
@@ -971,13 +1014,31 @@ header h1::before {
   border-radius: 2px;
 }
 
+/* Nunca se encoge: así los botones conservan su tamaño y es el título
+   (a la izquierda) el que se trunca con puntos suspensivos cuando el
+   panel queda angosto, en vez de quedar tapado detrás de los botones. */
 .editor-actions {
   display: flex;
   gap: 0.5rem;
+  flex-shrink: 0;
 }
 
 .editor-actions #delete-note-button {
   margin-left: auto;
+}
+
+/* Rango intermedio: cuando el panel del editor/preview queda angosto
+   (pantallas justo por encima del breakpoint mobile) los botones se
+   compactan un poco para dejarle más aire al título. */
+@media (min-width: 901px) and (max-width: 1150px) {
+  .editor-actions {
+    gap: 0.4rem;
+  }
+
+  .editor-actions .btn {
+    padding: 0.5rem 0.75rem;
+    font-size: 0.72rem;
+  }
 }
 
 .editor-textarea {
@@ -1727,27 +1788,112 @@ header h1::before {
 /* ----------------------------------------------------------------------------
    RESPONSIVE
    En pantallas angostas, la grilla de 3 columnas fijas (sidebar/editor/preview)
-   se vuelve inusable. La apilamos verticalmente y permitimos scroll general.
+   se vuelve inusable. En vez de apilarlas y obligar a hacer scroll por todo,
+   la app se comporta como una app nativa de una sola pantalla a la vez:
+   - Por defecto se ve la lista de notas, a pantalla completa.
+   - Al abrir una nota, la lista se oculta y el editor + preview aparecen
+     juntos, cada uno con la mitad de la pantalla y su propio scroll interno.
+   - Una flecha "←" en el editor vuelve a mostrar la lista.
 ---------------------------------------------------------------------------- */
 @media (max-width: 900px) {
-  body {
-    height: auto;
-    overflow: auto;
-  }
-
-  .container {
-    height: auto;
-    min-height: 100vh;
-  }
-
   .main-content {
     grid-template-columns: 1fr;
-    overflow: visible;
+    padding: 0.85rem;
+    gap: 0.85rem;
+    overflow: hidden;
   }
 
   .sidebar,
   .editor-section,
   .preview-section {
-    min-height: 300px;
+    min-height: 0;
   }
+
+  /* Modo edición: se activa agregando is-note-open a .main-content */
+  .main-content.is-note-open {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .main-content.is-note-open .sidebar {
+    display: none;
+  }
+
+  .main-content.is-note-open .editor-section,
+  .main-content.is-note-open .preview-section {
+    flex: 1 1 50%;
+  }
+
+  .editor-back-button {
+    display: inline-flex;
+  }
+
+  /* Header compacto en una sola línea: se quita el subtítulo para no
+     robarle espacio a la lista de notas y al editor/preview. */
+  header {
+    padding: 0.55rem 1rem;
+    border-bottom-width: 2px;
+  }
+
+  header h1 {
+    font-size: 0.95rem;
+    gap: 0.4rem;
+  }
+
+  header h1::before {
+    width: 7px;
+    height: 7px;
+  }
+
+  .app-subtitle {
+    display: none;
+  }
+
+  /* Encabezado del editor: se reduce y el título "Editor" se oculta
+     (queda el botón de volver + la fecha) para dejarle aire a los
+     botones de acción y que no tapen el lado izquierdo. */
+  .editor-header,
+  .preview-header {
+    padding-bottom: 0.5rem;
+    margin-bottom: 0.75rem;
+    gap: 0.4rem;
+  }
+
+  .editor-header-left {
+    gap: 0.45rem;
+  }
+
+  .editor-title-group h2,
+  .preview-header h2 {
+    display: none;
+  }
+
+  .editor-meta {
+    font-size: 0.72rem;
+  }
+
+  .editor-back-button {
+    width: 2rem;
+    height: 2rem;
+    font-size: 1.05rem;
+  }
+
+  /* Botones Guardar / Eliminar: más chicos y compactos en mobile */
+  .editor-actions {
+    gap: 0.4rem;
+    flex-shrink: 0;
+  }
+
+  .editor-actions .btn {
+    padding: 0.45rem 0.65rem;
+    font-size: 0.68rem;
+  }
+
+  /* Nota: el posicionamiento (izquierda/derecha/arriba/abajo) de los
+     dropdowns de filtros y del menú de opciones ya no se resuelve
+     "adivinando" con CSS — se calcula dinámicamente en JS en base al
+     espacio real disponible (ver positionDropdown() en app.js), así
+     que funciona sin importar dónde termine el botón que los abre. El
+     max-width de abajo queda solo como red de seguridad de ancho.
+  */
 }

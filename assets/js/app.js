@@ -6,6 +6,7 @@ const STORAGE_KEY = "markdown-notes";
 const EXCERPT_MAX_LEN = 100;
 const PREVIEW_DEBOUNCE_MS = 200;
 const SEARCH_DEBOUNCE_MS = 200;
+const LONG_PRESS_MS = 500; // duración del "mantener presionado" para activar selección múltiple en mobile
 
 let currentNoteId = null;
 let messageTimer;
@@ -1306,9 +1307,15 @@ function updateDeleteButtonState() {
 function toggleEditorAndPreview(isVisible) {
   const editorSection = document.querySelector("#editor-section");
   const previewSection = document.querySelector("#preview-section");
+  const mainContent = document.querySelector(".main-content");
 
   editorSection?.classList.toggle("is-hidden", !isVisible);
   previewSection?.classList.toggle("is-hidden", !isVisible);
+
+  // En mobile, esta clase es la que hace que la lista se oculte y el editor
+  // + preview ocupen toda la pantalla (ver breakpoint en styles.css). En
+  // escritorio no tiene efecto visual, ahí las tres columnas ya conviven.
+  mainContent?.classList.toggle("is-note-open", isVisible);
 }
 
 /**
@@ -1490,7 +1497,8 @@ const SORT_COMPARATORS = {
  * @returns {Array} Notas ordenadas.
  */
 function sortNotes(notes) {
-  const comparator = SORT_COMPARATORS[sortOrder] ?? SORT_COMPARATORS["updated-desc"];
+  const comparator =
+    SORT_COMPARATORS[sortOrder] ?? SORT_COMPARATORS["updated-desc"];
   return [...notes].sort(comparator);
 }
 
@@ -1533,6 +1541,55 @@ function resetScrollListNotes() {
 // ----------------------------------------------------------------------------
 // EVENTOS
 // ----------------------------------------------------------------------------
+
+/**
+ * Posiciona un dropdown/popover en base al espacio real disponible en el
+ * viewport, en vez de "adivinar" con CSS si conviene abrirlo hacia la
+ * izquierda o hacia la derecha (lo cual se rompe cuando el layout es
+ * flexible y el botón que lo dispara puede terminar en cualquier posición,
+ * como pasa con los chips de filtros al pasar de escritorio a mobile).
+ *
+ * Cambia el dropdown a `position: fixed` y calcula su `top`/`left` a partir
+ * del `getBoundingClientRect()` del botón que lo abre, recortando contra
+ * los bordes del viewport para que nunca quede cortado.
+ *
+ * @param {HTMLElement} trigger - Botón/chip que abre el dropdown.
+ * @param {HTMLElement} dropdown - Elemento del dropdown a posicionar.
+ * @param {{ align?: "left" | "right", margin?: number, gap?: number }} [options]
+ */
+function positionDropdown(trigger, dropdown, options = {}) {
+  if (!trigger || !dropdown) return;
+
+  const { align = "right", margin = 12, gap = 6 } = options;
+  const viewportWidth = document.documentElement.clientWidth;
+  const viewportHeight = document.documentElement.clientHeight;
+
+  const triggerRect = trigger.getBoundingClientRect();
+  const dropdownRect = dropdown.getBoundingClientRect();
+
+  // Vertical: por defecto debajo del botón; si no entra, se abre hacia arriba.
+  let top = triggerRect.bottom + gap;
+  if (top + dropdownRect.height > viewportHeight - margin) {
+    top = Math.max(margin, triggerRect.top - dropdownRect.height - gap);
+  }
+
+  // Horizontal: se intenta respetar la alineación preferida (izquierda o
+  // derecha respecto al botón) y, si no entra así, se recorta para que
+  // el dropdown quede siempre dentro del viewport.
+  let left =
+    align === "right"
+      ? triggerRect.right - dropdownRect.width
+      : triggerRect.left;
+
+  const maxLeft = viewportWidth - dropdownRect.width - margin;
+  left = Math.min(left, maxLeft);
+  left = Math.max(left, margin);
+
+  dropdown.style.position = "fixed";
+  dropdown.style.top = `${top}px`;
+  dropdown.style.left = `${left}px`;
+  dropdown.style.right = "auto";
+}
 
 /**
  * Inicitaliza todos los events listeners de la aplicación
@@ -1586,6 +1643,27 @@ function initializeEventListeners(store) {
     refreshNoteList();
     resetScrollListNotes();
     renderEditor(null);
+  });
+
+  // ----------------------------------------------------------------------
+  // BOTÓN VOLVER (solo mobile): oculta editor+preview y muestra la lista
+  // ----------------------------------------------------------------------
+
+  const editorBackButton = document.querySelector("#editor-back-button");
+
+  editorBackButton?.addEventListener("click", async () => {
+    if (!(await confirmDiscardChangesIfNeeded())) return;
+
+    // Al descartar, se revierte el textarea al último contenido guardado.
+    // Si no se hace esto, el valor "sucio" se queda en el textarea y en la
+    // próxima comparación (nueva nota / otra nota) sigue viéndose como un
+    // cambio sin guardar, mostrando el diálogo de confirmación de nuevo.
+    const editorTextArea = document.querySelector("#editor-textarea");
+    if (editorTextArea) {
+      editorTextArea.value = lastLoadedContent;
+    }
+
+    toggleEditorAndPreview(false);
   });
 
   // ----------------------------------------------------------------------
@@ -1730,6 +1808,15 @@ function initializeEventListeners(store) {
   };
 
   noteListContainer?.addEventListener("click", (event) => {
+    // Un long-press que ya activó el modo selección dispara, en mobile, un
+    // "click" fantasma justo después del touchend. Si lo dejamos pasar,
+    // togglearía el checkbox recién marcado y lo dejaría desmarcado.
+    if (longPressFired) {
+      longPressFired = false;
+      event.preventDefault();
+      return;
+    }
+
     if (selectionMode) {
       if (event.target.closest(".note-select-checkbox")) return;
 
@@ -1757,6 +1844,59 @@ function initializeEventListeners(store) {
       return;
 
     toggleNoteSelection(event.target.dataset.id, event.target.checked);
+  });
+
+  // ----------------------------------------------------------------------
+  // LONG-PRESS (mobile): mantener presionada una nota activa el modo
+  // selección múltiple, como alternativa táctil al menú "⋮ Seleccionar".
+  // ----------------------------------------------------------------------
+
+  let longPressTimer = null;
+  let longPressFired = false;
+  let longPressNoteItem = null;
+
+  const clearLongPress = () => {
+    clearTimeout(longPressTimer);
+    longPressTimer = null;
+    longPressNoteItem?.classList.remove("is-long-pressing");
+    longPressNoteItem = null;
+  };
+
+  noteListContainer?.addEventListener(
+    "touchstart",
+    (event) => {
+      if (selectionMode) return; // ya estamos seleccionando, nada que activar
+
+      const noteItem = event.target.closest(".note-item");
+      if (!noteItem) return;
+
+      longPressFired = false;
+      longPressNoteItem = noteItem;
+      noteItem.classList.add("is-long-pressing");
+
+      longPressTimer = setTimeout(() => {
+        longPressFired = true;
+        noteItem.classList.remove("is-long-pressing");
+
+        if (navigator.vibrate) navigator.vibrate(15);
+
+        // Se marca como seleccionada antes de refrescar la lista, así el
+        // primer render del modo selección ya la muestra tildada.
+        selectedNoteIds.add(noteItem.dataset.id);
+        enterSelectionMode();
+      }, LONG_PRESS_MS);
+    },
+    { passive: true },
+  );
+
+  noteListContainer?.addEventListener("touchend", clearLongPress);
+  noteListContainer?.addEventListener("touchmove", clearLongPress);
+  noteListContainer?.addEventListener("touchcancel", clearLongPress);
+
+  // En Android/iOS, mantener presionado también puede disparar el menú
+  // contextual nativo (copiar, etc.); lo evitamos dentro de la lista.
+  noteListContainer?.addEventListener("contextmenu", (event) => {
+    if (event.target.closest(".note-item")) event.preventDefault();
   });
 
   // ----------------------------------------------------------------------
@@ -1790,6 +1930,7 @@ function initializeEventListeners(store) {
   const openNotesMenu = () => {
     notesMenuDropdown?.classList.remove("is-hidden");
     notesMenuButton?.setAttribute("aria-expanded", "true");
+    positionDropdown(notesMenuButton, notesMenuDropdown, { align: "right" });
   };
 
   notesMenuButton?.addEventListener("click", (event) => {
@@ -1811,8 +1952,35 @@ function initializeEventListeners(store) {
       closeDateFilterMenu();
       closeSortMenu();
       if (trashOverlay?.classList.contains("is-visible")) closeTrashDialog();
-      if (importOverlay?.classList.contains("is-visible"))
-        closeImportDialog();
+      if (importOverlay?.classList.contains("is-visible")) closeImportDialog();
+    }
+  });
+
+  // Si la ventana cambia de tamaño (resize del navegador, rotar el
+  // celular, etc.) con algún popover abierto, se recalcula su posición
+  // en vez de dejarlo desalineado o fuera de pantalla.
+  window.addEventListener("resize", () => {
+    if (
+      notesMenuDropdown &&
+      !notesMenuDropdown.classList.contains("is-hidden")
+    ) {
+      positionDropdown(notesMenuButton, notesMenuDropdown, { align: "right" });
+    }
+    if (
+      dateFilterDropdown &&
+      !dateFilterDropdown.classList.contains("is-hidden")
+    ) {
+      positionDropdown(dateFilterButton, dateFilterDropdown, {
+        align: "left",
+      });
+    }
+    if (
+      sortFilterDropdown &&
+      !sortFilterDropdown.classList.contains("is-hidden")
+    ) {
+      positionDropdown(sortFilterButton, sortFilterDropdown, {
+        align: "right",
+      });
     }
   });
 
@@ -1901,6 +2069,7 @@ function initializeEventListeners(store) {
   const openDateFilterMenu = () => {
     dateFilterDropdown?.classList.remove("is-hidden");
     dateFilterButton?.setAttribute("aria-expanded", "true");
+    positionDropdown(dateFilterButton, dateFilterDropdown, { align: "left" });
   };
 
   // Refleja en el chip y en el popover cuál es el rango activo.
@@ -2002,6 +2171,7 @@ function initializeEventListeners(store) {
   const openSortMenu = () => {
     sortFilterDropdown?.classList.remove("is-hidden");
     sortFilterButton?.setAttribute("aria-expanded", "true");
+    positionDropdown(sortFilterButton, sortFilterDropdown, { align: "right" });
   };
 
   // Refleja en el chip y en el popover cuál es el criterio activo. El
@@ -2011,17 +2181,11 @@ function initializeEventListeners(store) {
     if (sortFilterButton) {
       sortFilterButton.textContent =
         SORT_LABELS[sortOrder] ?? SORT_LABELS["updated-desc"];
-      sortFilterButton.classList.toggle(
-        "active",
-        sortOrder !== "updated-desc",
-      );
+      sortFilterButton.classList.toggle("active", sortOrder !== "updated-desc");
     }
 
     sortFilterOptions.forEach((option) => {
-      option.classList.toggle(
-        "is-selected",
-        option.dataset.sort === sortOrder,
-      );
+      option.classList.toggle("is-selected", option.dataset.sort === sortOrder);
     });
   };
 
@@ -2450,9 +2614,7 @@ function initializeEventListeners(store) {
   const importSelectAllCheckbox = document.querySelector(
     "#import-select-all-checkbox",
   );
-  const importConfirmButton = document.querySelector(
-    "#import-confirm-button",
-  );
+  const importConfirmButton = document.querySelector("#import-confirm-button");
 
   // Mismo criterio que updateTrashActionsUI/updateBulkActionsUI, pero para
   // las notas candidatas a importar.
