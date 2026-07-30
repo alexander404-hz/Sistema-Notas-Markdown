@@ -14,6 +14,9 @@ let searchDebounceTimer;
 let lastLoadedContent = "";
 let searchQuery = "";
 let showFavoritesOnly = false;
+let dateFilterRange = "all"; // "all" | "today" | "week" | "month" | "custom"
+let dateFilterStart = null; // string "YYYY-MM-DD" (input type=date), solo para "custom"
+let dateFilterEnd = null; // string "YYYY-MM-DD" (input type=date), solo para "custom"
 let selectionMode = false;
 let selectedNoteIds = new Set();
 
@@ -78,6 +81,139 @@ function deriveExcerpt(content, maxLen) {
   const clean = content.trim();
 
   return clean.length <= limit ? clean : clean.slice(0, limit) + "...";
+}
+
+// ----------------------------------------------------------------------------
+// FECHAS
+// ----------------------------------------------------------------------------
+
+/**
+ * Formatea fecha y hora completas en español, ej: "29 jul 2026, 14:32".
+ * @param {number} timestamp - Marca de tiempo en milisegundos.
+ * @returns {string} Fecha y hora formateadas.
+ */
+function formatFullDateTime(timestamp) {
+  const date = new Date(timestamp);
+  const datePart = date.toLocaleDateString("es", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+  const timePart = date.toLocaleTimeString("es", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+
+  return `${datePart}, ${timePart}`;
+}
+
+/**
+ * Formatea solo la fecha (sin hora) en español, ej: "12 jun 2025".
+ * @param {number} timestamp - Marca de tiempo en milisegundos.
+ * @returns {string} Fecha formateada.
+ */
+function formatFullDate(timestamp) {
+  return new Date(timestamp).toLocaleDateString("es", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+}
+
+/**
+ * Genera una etiqueta legible y relativa para la fecha de última edición de
+ * una nota, pensada para mostrarse en la ficha de la lista: "Editada hace
+ * 5 min", "Editada hoy, 14:32", "Editada ayer, 09:10" o, si ya pasó más
+ * tiempo, la fecha completa.
+ * @param {number} timestamp - Marca de tiempo en milisegundos (updatedAt).
+ * @returns {string} Texto relativo para mostrar en la ficha de la nota.
+ */
+function formatUpdatedLabel(timestamp) {
+  const diffMin = Math.floor((Date.now() - timestamp) / 60000);
+
+  if (diffMin < 1) return "Editada justo ahora";
+  if (diffMin < 60) return `Editada hace ${diffMin} min`;
+
+  const date = new Date(timestamp);
+  const today = new Date();
+  const yesterday = new Date(today);
+  yesterday.setDate(today.getDate() - 1);
+
+  const timePart = date.toLocaleTimeString("es", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+
+  if (date.toDateString() === today.toDateString()) {
+    return `Editada hoy, ${timePart}`;
+  }
+
+  if (date.toDateString() === yesterday.toDateString()) {
+    return `Editada ayer, ${timePart}`;
+  }
+
+  return `Editada el ${formatFullDateTime(timestamp)}`;
+}
+
+/**
+ * Convierte un string "YYYY-MM-DD" (de un <input type="date">) a un objeto
+ * Date en horario local, evitando el corrimiento de un día que provoca
+ * `new Date("YYYY-MM-DD")` al interpretarlo como UTC.
+ * @param {string} value - Valor del input de fecha.
+ * @returns {Date|null} Fecha local o `null` si el valor es inválido.
+ */
+function parseDateInputValue(value) {
+  if (!isValidString(value)) return null;
+
+  const [year, month, day] = value.split("-").map(Number);
+  if (!year || !month || !day) return null;
+
+  return new Date(year, month - 1, day);
+}
+
+/**
+ * Calcula el rango de timestamps [from, to] correspondiente a un filtro de
+ * fecha rápido ("today", "week", "month") o personalizado ("custom").
+ * @param {"all"|"today"|"week"|"month"|"custom"} range - Rango seleccionado.
+ * @param {string|null} customStart - Fecha de inicio ("YYYY-MM-DD") si range es "custom".
+ * @param {string|null} customEnd - Fecha de fin ("YYYY-MM-DD") si range es "custom".
+ * @returns {{from: number, to: number}|null} Límites en milisegundos, o
+ * `null` si no corresponde filtrar (rango "all" o datos incompletos).
+ */
+function getDateRangeBounds(range, customStart, customEnd) {
+  const startOfDay = (d) =>
+    new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const endOfDay = (d) =>
+    new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999).getTime();
+
+  const now = new Date();
+
+  switch (range) {
+    case "today":
+      return { from: startOfDay(now), to: endOfDay(now) };
+
+    case "week": {
+      const start = new Date(now);
+      start.setDate(now.getDate() - 6); // últimos 7 días, incluyendo hoy
+      return { from: startOfDay(start), to: endOfDay(now) };
+    }
+
+    case "month": {
+      const start = new Date(now.getFullYear(), now.getMonth(), 1);
+      return { from: startOfDay(start), to: endOfDay(now) };
+    }
+
+    case "custom": {
+      const start = parseDateInputValue(customStart);
+      const end = parseDateInputValue(customEnd);
+      if (!start || !end) return null;
+
+      return { from: startOfDay(start), to: endOfDay(end) };
+    }
+
+    default:
+      return null; // "all": sin filtro de fecha
+  }
 }
 
 // ----------------------------------------------------------------------------
@@ -472,7 +608,19 @@ function createPersistentNotesStore() {
    * @returns {Result} `{ notes }` con las notas filtradas, ordenadas de
    * más reciente a más antigua según `updatedAt`.
    */
-  function queryNotes({ favoritesOnly = false, searchQuery = "" } = {}) {
+  /**
+   * Filtra y ordena las notas en un solo paso, combinando los criterios
+   * de favoritas, búsqueda por texto y rango de fecha.
+   * @param {{ favoritesOnly?: boolean, searchQuery?: string, dateFrom?: number|null, dateTo?: number|null }} [filters]
+   * @returns {Result} `{ notes }` con las notas filtradas, ordenadas de
+   * más reciente a más antigua según `updatedAt`.
+   */
+  function queryNotes({
+    favoritesOnly = false,
+    searchQuery = "",
+    dateFrom = null,
+    dateTo = null,
+  } = {}) {
     let result = notes;
 
     if (favoritesOnly) {
@@ -484,6 +632,12 @@ function createPersistentNotesStore() {
     if (normalizedQuery !== "") {
       result = result.filter((note) =>
         `${note.title} ${note.content}`.toLowerCase().includes(normalizedQuery),
+      );
+    }
+
+    if (isValidNumber(dateFrom) && isValidNumber(dateTo)) {
+      result = result.filter(
+        (note) => note.updatedAt >= dateFrom && note.updatedAt <= dateTo,
       );
     }
 
@@ -548,10 +702,14 @@ function renderNoteList(notes) {
   noteListElement.innerHTML = "";
 
   if (!Array.isArray(notes) || notes.length === 0) {
-    const emptyText =
-      searchQuery.trim() !== "" || showFavoritesOnly
-        ? "No hay notas que coincidan con el filtro actual."
-        : "No hay notas aún. Crea una nota para empezar.";
+    const hasActiveFilters =
+      searchQuery.trim() !== "" ||
+      showFavoritesOnly ||
+      dateFilterRange !== "all";
+
+    const emptyText = hasActiveFilters
+      ? "No hay notas que coincidan con el filtro actual."
+      : "No hay notas aún. Crea una nota para empezar.";
 
     noteListElement.innerHTML = `<p class="empty-message">${emptyText}</p>`;
     return;
@@ -611,8 +769,8 @@ function renderNoteList(notes) {
     noteExcerpt.className = "note-excerpt";
 
     const noteDate = document.createElement("small");
-    const date = new Date(note.updatedAt);
-    noteDate.textContent = date.toLocaleDateString();
+    noteDate.textContent = formatUpdatedLabel(note.updatedAt);
+    noteDate.title = formatFullDateTime(note.updatedAt);
     noteDate.className = "note-date";
 
     noteItem.append(noteHeader, noteExcerpt, noteDate);
@@ -702,6 +860,13 @@ function renderEditor(note) {
   currentNoteId = note?.id ?? null;
   lastLoadedContent = editorTextArea.value;
 
+  const editorMeta = document.querySelector("#editor-meta");
+  if (editorMeta) {
+    editorMeta.textContent = note?.createdAt
+      ? `Creada el ${formatFullDate(note.createdAt)}`
+      : "";
+  }
+
   updateDeleteButtonState();
   renderPreview(editorTextArea.value);
 }
@@ -733,16 +898,105 @@ function showMessage(message, isError) {
 }
 
 /**
+ * Muestra un diálogo de confirmación moderno (reemplaza al `confirm()`
+ * nativo del navegador). Se puede cerrar confirmando, cancelando, haciendo
+ * click afuera de la tarjeta o presionando Escape (cancela) / Enter (confirma).
+ * @param {{ title?: string, message: string, confirmText?: string, cancelText?: string, danger?: boolean }} options
+ * @returns {Promise<boolean>} `true` si el usuario confirmó, `false` si canceló.
+ */
+function showConfirmDialog({
+  title = "Confirmar",
+  message,
+  confirmText = "Confirmar",
+  cancelText = "Cancelar",
+  danger = false,
+} = {}) {
+  const overlay = document.querySelector("#confirm-dialog-overlay");
+  const dialog = document.querySelector("#confirm-dialog");
+  const titleElement = document.querySelector("#confirm-dialog-title");
+  const messageElement = document.querySelector("#confirm-dialog-message");
+  const cancelButton = document.querySelector("#confirm-dialog-cancel");
+  const confirmButton = document.querySelector("#confirm-dialog-confirm");
+
+  // Si por algún motivo el markup del diálogo no está en la página, no
+  // dejamos a la app sin forma de confirmar: recurrimos al confirm() nativo.
+  if (
+    !overlay ||
+    !dialog ||
+    !titleElement ||
+    !messageElement ||
+    !cancelButton ||
+    !confirmButton
+  ) {
+    console.error("No se encontró el markup de #confirm-dialog-overlay");
+    return Promise.resolve(confirm(message));
+  }
+
+  titleElement.textContent = title;
+  messageElement.textContent = message;
+  cancelButton.textContent = cancelText;
+  confirmButton.textContent = confirmText;
+
+  dialog.classList.toggle("is-danger", danger);
+  confirmButton.classList.toggle("btn-danger-solid", danger);
+  confirmButton.classList.toggle("btn-primary", !danger);
+
+  const previouslyFocused = document.activeElement;
+
+  overlay.classList.add("is-visible");
+  confirmButton.focus();
+
+  return new Promise((resolve) => {
+    const close = (value) => {
+      overlay.classList.remove("is-visible");
+
+      cancelButton.removeEventListener("click", handleCancel);
+      confirmButton.removeEventListener("click", handleConfirm);
+      overlay.removeEventListener("click", handleOverlayClick);
+      document.removeEventListener("keydown", handleKeydown);
+
+      if (previouslyFocused instanceof HTMLElement) previouslyFocused.focus();
+
+      resolve(value);
+    };
+
+    const handleCancel = () => close(false);
+    const handleConfirm = () => close(true);
+
+    const handleOverlayClick = (event) => {
+      if (event.target === overlay) close(false);
+    };
+
+    const handleKeydown = (event) => {
+      if (event.key === "Escape") close(false);
+      if (event.key === "Enter") close(true);
+    };
+
+    cancelButton.addEventListener("click", handleCancel);
+    confirmButton.addEventListener("click", handleConfirm);
+    overlay.addEventListener("click", handleOverlayClick);
+    document.addEventListener("keydown", handleKeydown);
+  });
+}
+
+/**
  * Si hay cambios sin guardar, pide confirmación al usuario antes de
  * descartarlos (por ejemplo, al cambiar de nota o crear una nueva).
- * @returns {boolean} `true` si es seguro continuar (no hay cambios o el usuario confirmó descartarlos).
+ * @returns {Promise<boolean>} `true` si es seguro continuar (no hay cambios o el usuario confirmó descartarlos).
  */
-function confirmDiscardChangesIfNeeded() {
+async function confirmDiscardChangesIfNeeded() {
   const editorTextArea = document.querySelector("#editor-textarea");
   if (!editorTextArea) return true;
 
   if (editorTextArea.value === lastLoadedContent) return true;
-  return confirm("Tenés cambios sin guardar. ¿Querés descartarlos?");
+
+  return showConfirmDialog({
+    title: "Cambios sin guardar",
+    message: "Tenés cambios sin guardar. ¿Querés descartarlos?",
+    confirmText: "Descartar",
+    cancelText: "Seguir editando",
+    danger: true,
+  });
 }
 
 /**
@@ -753,9 +1007,17 @@ function confirmDiscardChangesIfNeeded() {
  * @returns {Array} Notas visibles, ordenadas de más reciente a más antigua.
  */
 function getVisibleNotes(store) {
+  const dateBounds = getDateRangeBounds(
+    dateFilterRange,
+    dateFilterStart,
+    dateFilterEnd,
+  );
+
   return store.queryNotes({
     favoritesOnly: showFavoritesOnly,
     searchQuery,
+    dateFrom: dateBounds?.from ?? null,
+    dateTo: dateBounds?.to ?? null,
   }).data.notes;
 }
 
@@ -790,8 +1052,8 @@ function initializeEventListeners(store) {
   //Nota Nueva
   const newNoteButton = document.querySelector("#new-note-button");
 
-  newNoteButton?.addEventListener("click", () => {
-    if (!confirmDiscardChangesIfNeeded()) return;
+  newNoteButton?.addEventListener("click", async () => {
+    if (!(await confirmDiscardChangesIfNeeded())) return;
 
     currentNoteId = null;
     refreshNoteList();
@@ -833,12 +1095,21 @@ function initializeEventListeners(store) {
   //Eliminar nota
   const deleteNoteButton = document.querySelector("#delete-note-button");
 
-  deleteNoteButton?.addEventListener("click", () => {
+  deleteNoteButton?.addEventListener("click", async () => {
     if (!currentNoteId) {
       return showMessage("No hay una nota seleccionada", true);
     }
 
-    if (confirm("Estas seguro?")) {
+    const confirmed = await showConfirmDialog({
+      title: "Eliminar nota",
+      message:
+        "¿Estás seguro de que querés eliminar esta nota? Esta acción no se puede deshacer.",
+      confirmText: "Eliminar",
+      cancelText: "Cancelar",
+      danger: true,
+    });
+
+    if (confirmed) {
       const result = store.deleteNote(currentNoteId);
 
       if (result.success) {
@@ -883,8 +1154,20 @@ function initializeEventListeners(store) {
     }
   };
 
-  const handleOpenNote = (noteItem) => {
-    if (!confirmDiscardChangesIfNeeded()) return;
+  // Marca una ficha como "activa" sin reconstruir la lista completa.
+  // Antes, abrir una nota disparaba refreshNoteList() (innerHTML = "" +
+  // recrear todas las fichas), lo que hacía que TODAS repitieran su
+  // animación de entrada en cada click — se sentía como un pequeño tranco
+  // en toda la lista. Con solo mover la clase, el resto del DOM ni se toca.
+  const highlightActiveNoteItem = (noteItem) => {
+    noteListContainer
+      ?.querySelectorAll(".note-item.active")
+      .forEach((item) => item.classList.remove("active"));
+    noteItem.classList.add("active");
+  };
+
+  const handleOpenNote = async (noteItem) => {
+    if (!(await confirmDiscardChangesIfNeeded())) return;
 
     const noteId = noteItem.dataset.id;
 
@@ -893,7 +1176,7 @@ function initializeEventListeners(store) {
     if (result.success) {
       renderEditor(result.data.note);
 
-      refreshNoteList();
+      highlightActiveNoteItem(noteItem);
     } else {
       showMessage(result.message, true);
     }
@@ -978,13 +1261,17 @@ function initializeEventListeners(store) {
     isOpen ? closeNotesMenu() : openNotesMenu();
   });
 
-  // Cerrar el menú al hacer click afuera o al presionar Escape
+  // Cerrar los menús/popovers al hacer click afuera o al presionar Escape
   document.addEventListener("click", (event) => {
     if (!event.target.closest(".notes-menu")) closeNotesMenu();
+    if (!event.target.closest(".date-filter")) closeDateFilterMenu();
   });
 
   document.addEventListener("keydown", (event) => {
-    if (event.key === "Escape") closeNotesMenu();
+    if (event.key === "Escape") {
+      closeNotesMenu();
+      closeDateFilterMenu();
+    }
   });
 
   menuSelectNotesItem?.addEventListener("click", () => {
@@ -1036,6 +1323,106 @@ function initializeEventListeners(store) {
       : "☆ Solo favoritas";
 
     refreshNoteList();
+  });
+
+  // ----------------------------------------------------------------------
+  // FILTRO DE FECHA (chip con popover: atajos rápidos + rango personalizado)
+  // ----------------------------------------------------------------------
+
+  const dateFilterButton = document.querySelector("#date-filter-button");
+  const dateFilterDropdown = document.querySelector("#date-filter-dropdown");
+  const dateFilterOptions = document.querySelectorAll(".date-filter-option");
+  const dateFilterCustom = document.querySelector("#date-filter-custom");
+  const dateFilterStartInput = document.querySelector("#date-filter-start");
+  const dateFilterEndInput = document.querySelector("#date-filter-end");
+  const dateFilterApplyButton = document.querySelector("#date-filter-apply");
+
+  const DATE_FILTER_LABELS = {
+    all: "📅 Fecha",
+    today: "📅 Hoy",
+    week: "📅 7 días",
+    month: "📅 Este mes",
+    custom: "📅 Rango",
+  };
+
+  const closeDateFilterMenu = () => {
+    dateFilterDropdown?.classList.add("is-hidden");
+    dateFilterButton?.setAttribute("aria-expanded", "false");
+  };
+
+  const openDateFilterMenu = () => {
+    dateFilterDropdown?.classList.remove("is-hidden");
+    dateFilterButton?.setAttribute("aria-expanded", "true");
+  };
+
+  // Refleja en el chip y en el popover cuál es el rango activo.
+  const updateDateFilterUI = () => {
+    if (dateFilterButton) {
+      dateFilterButton.textContent =
+        DATE_FILTER_LABELS[dateFilterRange] ?? DATE_FILTER_LABELS.all;
+      dateFilterButton.classList.toggle("active", dateFilterRange !== "all");
+      dateFilterButton.setAttribute(
+        "aria-pressed",
+        String(dateFilterRange !== "all"),
+      );
+    }
+
+    dateFilterOptions.forEach((option) => {
+      option.classList.toggle(
+        "is-selected",
+        option.dataset.range === dateFilterRange,
+      );
+    });
+
+    dateFilterCustom?.classList.toggle("is-hidden", dateFilterRange !== "custom");
+  };
+
+  dateFilterButton?.addEventListener("click", (event) => {
+    event.stopPropagation();
+    const isOpen = dateFilterDropdown?.classList.contains("is-hidden") === false;
+    isOpen ? closeDateFilterMenu() : openDateFilterMenu();
+  });
+
+  dateFilterOptions.forEach((option) => {
+    option.addEventListener("click", () => {
+      const range = option.dataset.range;
+      dateFilterRange = range;
+
+      updateDateFilterUI();
+
+      // "Rango personalizado" necesita que el usuario elija fechas antes de
+      // aplicar, así que el popover se mantiene abierto y el foco pasa al
+      // primer campo. Para el resto de las opciones, se aplica al toque.
+      if (range === "custom") {
+        dateFilterStartInput?.focus();
+        return;
+      }
+
+      refreshNoteList();
+      closeDateFilterMenu();
+    });
+  });
+
+  dateFilterApplyButton?.addEventListener("click", () => {
+    const startValue = dateFilterStartInput?.value;
+    const endValue = dateFilterEndInput?.value;
+
+    if (!startValue || !endValue) {
+      return showMessage("Elegí una fecha de inicio y una de fin", true);
+    }
+
+    if (startValue > endValue) {
+      return showMessage(
+        "La fecha de inicio no puede ser posterior a la de fin",
+        true,
+      );
+    }
+
+    dateFilterStart = startValue;
+    dateFilterEnd = endValue;
+
+    refreshNoteList();
+    closeDateFilterMenu();
   });
 
   // ----------------------------------------------------------------------
@@ -1183,16 +1570,24 @@ function initializeEventListeners(store) {
   });
 
   // Eliminar todas las notas seleccionadas de una vez
-  bulkDeleteButton?.addEventListener("click", () => {
+  bulkDeleteButton?.addEventListener("click", async () => {
     const ids = Array.from(selectedNoteIds);
     if (ids.length === 0) return;
 
     const confirmMessage =
       ids.length === 1
-        ? "¿Eliminar la nota seleccionada?"
-        : `¿Eliminar las ${ids.length} notas seleccionadas?`;
+        ? "¿Eliminar la nota seleccionada? Esta acción no se puede deshacer."
+        : `¿Eliminar las ${ids.length} notas seleccionadas? Esta acción no se puede deshacer.`;
 
-    if (!confirm(confirmMessage)) return;
+    const confirmed = await showConfirmDialog({
+      title: ids.length === 1 ? "Eliminar nota" : "Eliminar notas",
+      message: confirmMessage,
+      confirmText: "Eliminar",
+      cancelText: "Cancelar",
+      danger: true,
+    });
+
+    if (!confirmed) return;
 
     const result = store.deleteNotes(ids);
 
