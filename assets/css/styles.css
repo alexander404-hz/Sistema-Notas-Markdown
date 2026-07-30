@@ -556,6 +556,66 @@ header h1::before {
   outline-offset: 2px;
 }
 
+.sort-filter {
+  position: relative;
+}
+
+.sort-filter-dropdown {
+  position: absolute;
+  top: calc(100% + 0.4rem);
+  right: 0;
+  z-index: 20;
+  min-width: 15rem;
+  background-color: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-card-hover);
+  padding: 0.35rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  transform-origin: top right;
+  transition: opacity 0.15s var(--ease), transform 0.15s var(--ease);
+}
+
+.sort-filter-dropdown.is-hidden {
+  display: flex !important;
+  opacity: 0;
+  transform: scale(0.94) translateY(-4px);
+  pointer-events: none;
+}
+
+.sort-filter-option {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 0.5rem 0.6rem;
+  background-color: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  color: var(--ink);
+  cursor: pointer;
+  transition: background-color 0.15s var(--ease), transform 0.15s var(--ease);
+}
+
+.sort-filter-option:hover {
+  background-color: var(--surface-sunken);
+  transform: translateX(2px);
+}
+
+.sort-filter-option:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: -2px;
+}
+
+.sort-filter-option.is-selected {
+  background-color: var(--gold-soft);
+  color: #7a5c14;
+  font-weight: 600;
+}
+
 .btn-icon-danger:hover {
   background-color: var(--danger);
   border-color: var(--danger);

@@ -308,6 +308,70 @@
                   </div>
                 </div>
               </div>
+              <div class="sort-filter">
+                <button
+                  id="sort-filter-button"
+                  class="filter-chip"
+                  aria-haspopup="true"
+                  aria-expanded="false"
+                >
+                  ⇅ Más recientes
+                </button>
+                <div
+                  id="sort-filter-dropdown"
+                  class="sort-filter-dropdown is-hidden"
+                  role="menu"
+                >
+                  <button
+                    type="button"
+                    class="sort-filter-option is-selected"
+                    data-sort="updated-desc"
+                    role="menuitem"
+                  >
+                    Editadas: más recientes primero
+                  </button>
+                  <button
+                    type="button"
+                    class="sort-filter-option"
+                    data-sort="updated-asc"
+                    role="menuitem"
+                  >
+                    Editadas: más antiguas primero
+                  </button>
+                  <button
+                    type="button"
+                    class="sort-filter-option"
+                    data-sort="created-desc"
+                    role="menuitem"
+                  >
+                    Creadas: más nuevas primero
+                  </button>
+                  <button
+                    type="button"
+                    class="sort-filter-option"
+                    data-sort="created-asc"
+                    role="menuitem"
+                  >
+                    Creadas: más antiguas primero
+                  </button>
+                  <button
+                    type="button"
+                    class="sort-filter-option"
+                    data-sort="title-asc"
+                    role="menuitem"
+                  >
+                    Título: A → Z
+                  </button>
+                  <button
+                    type="button"
+                    class="sort-filter-option"
+                    data-sort="title-desc"
+                    role="menuitem"
+                  >
+                    Título: Z → A
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
           <div id="note-list" class="note-list"></div>

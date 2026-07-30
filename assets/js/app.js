@@ -17,6 +17,7 @@ let showFavoritesOnly = false;
 let dateFilterRange = "all"; // "all" | "today" | "week" | "month" | "custom"
 let dateFilterStart = null; // string "YYYY-MM-DD" (input type=date), solo para "custom"
 let dateFilterEnd = null; // string "YYYY-MM-DD" (input type=date), solo para "custom"
+let sortOrder = "updated-desc"; // ver SORT_COMPARATORS para las opciones disponibles
 let selectionMode = false;
 let selectedNoteIds = new Set();
 let selectedTrashIds = new Set();
@@ -1300,11 +1301,36 @@ async function confirmDiscardChangesIfNeeded() {
 }
 
 /**
+ * Comparadores disponibles para ordenar la lista de notas visibles.
+ * Cada clave corresponde al `data-sort` de una opción en el menú de orden.
+ */
+const SORT_COMPARATORS = {
+  "updated-desc": (a, b) => b.updatedAt - a.updatedAt,
+  "updated-asc": (a, b) => a.updatedAt - b.updatedAt,
+  "created-desc": (a, b) => b.createdAt - a.createdAt,
+  "created-asc": (a, b) => a.createdAt - b.createdAt,
+  "title-asc": (a, b) =>
+    a.title.localeCompare(b.title, "es", { sensitivity: "base" }),
+  "title-desc": (a, b) =>
+    b.title.localeCompare(a.title, "es", { sensitivity: "base" }),
+};
+
+/**
+ * Ordena un array de notas según el criterio activo (`sortOrder`).
+ * Devuelve un array nuevo; no modifica el original.
+ * @param {Array} notes - Notas a ordenar.
+ * @returns {Array} Notas ordenadas.
+ */
+function sortNotes(notes) {
+  const comparator = SORT_COMPARATORS[sortOrder] ?? SORT_COMPARATORS["updated-desc"];
+  return [...notes].sort(comparator);
+}
+
+/**
  * Calcula qué notas mostrar en la lista según los filtros activos
- * (`searchQuery` y `showFavoritesOnly`). Delega el filtrado y el
- * ordenamiento por completo al store, que lo resuelve en un único paso.
+ * (`searchQuery` y `showFavoritesOnly`) y las ordena según `sortOrder`.
  * @param {Object} store - Store de notas.
- * @returns {Array} Notas visibles, ordenadas de más reciente a más antigua.
+ * @returns {Array} Notas visibles, ordenadas según el criterio elegido.
  */
 function getVisibleNotes(store) {
   const dateBounds = getDateRangeBounds(
@@ -1313,12 +1339,14 @@ function getVisibleNotes(store) {
     dateFilterEnd,
   );
 
-  return store.queryNotes({
+  const notes = store.queryNotes({
     favoritesOnly: showFavoritesOnly,
     searchQuery,
     dateFrom: dateBounds?.from ?? null,
     dateTo: dateBounds?.to ?? null,
   }).data.notes;
+
+  return sortNotes(notes);
 }
 
 /**
@@ -1351,6 +1379,20 @@ function initializeEventListeners(store) {
   const refreshNoteList = () => {
     renderNoteList(getVisibleNotes(store));
   };
+
+  // Avisa al navegador si hay cambios sin guardar al cerrar/recargar la
+  // pestaña, para que muestre su propio diálogo de confirmación nativo.
+  window.addEventListener("beforeunload", (event) => {
+    const editorTextArea = document.querySelector("#editor-textarea");
+    if (!editorTextArea) return;
+    if (editorTextArea.value === lastLoadedContent) return;
+
+    // Los navegadores modernos ignoran el mensaje personalizado y
+    // muestran su propio texto genérico, pero hay que llamar a
+    // preventDefault() y/o setear returnValue para activar el diálogo.
+    event.preventDefault();
+    event.returnValue = "";
+  });
 
   // Se define acá arriba porque los flujos de borrado normales también
   // necesitan actualizar el contador.
@@ -1592,12 +1634,14 @@ function initializeEventListeners(store) {
   document.addEventListener("click", (event) => {
     if (!event.target.closest(".notes-menu")) closeNotesMenu();
     if (!event.target.closest(".date-filter")) closeDateFilterMenu();
+    if (!event.target.closest(".sort-filter")) closeSortMenu();
   });
 
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape") {
       closeNotesMenu();
       closeDateFilterMenu();
+      closeSortMenu();
       if (trashOverlay?.classList.contains("is-visible")) closeTrashDialog();
     }
   });
@@ -1761,6 +1805,70 @@ function initializeEventListeners(store) {
 
     refreshNoteList();
     closeDateFilterMenu();
+  });
+
+  // ----------------------------------------------------------------------
+  // ORDEN DE LA LISTA (chip con popover: por fecha o alfabético)
+  // ----------------------------------------------------------------------
+
+  const sortFilterButton = document.querySelector("#sort-filter-button");
+  const sortFilterDropdown = document.querySelector("#sort-filter-dropdown");
+  const sortFilterOptions = document.querySelectorAll(".sort-filter-option");
+
+  const SORT_LABELS = {
+    "updated-desc": "⇅ Más recientes",
+    "updated-asc": "⇅ Más antiguas",
+    "created-desc": "⇅ Creación (nuevas)",
+    "created-asc": "⇅ Creación (antiguas)",
+    "title-asc": "⇅ Título A-Z",
+    "title-desc": "⇅ Título Z-A",
+  };
+
+  const closeSortMenu = () => {
+    sortFilterDropdown?.classList.add("is-hidden");
+    sortFilterButton?.setAttribute("aria-expanded", "false");
+  };
+
+  const openSortMenu = () => {
+    sortFilterDropdown?.classList.remove("is-hidden");
+    sortFilterButton?.setAttribute("aria-expanded", "true");
+  };
+
+  // Refleja en el chip y en el popover cuál es el criterio activo. El
+  // orden "updated-desc" es el que trae la app por defecto, así que no
+  // se marca como "modificado" en el chip.
+  const updateSortFilterUI = () => {
+    if (sortFilterButton) {
+      sortFilterButton.textContent =
+        SORT_LABELS[sortOrder] ?? SORT_LABELS["updated-desc"];
+      sortFilterButton.classList.toggle(
+        "active",
+        sortOrder !== "updated-desc",
+      );
+    }
+
+    sortFilterOptions.forEach((option) => {
+      option.classList.toggle(
+        "is-selected",
+        option.dataset.sort === sortOrder,
+      );
+    });
+  };
+
+  sortFilterButton?.addEventListener("click", (event) => {
+    event.stopPropagation();
+    const isOpen =
+      sortFilterDropdown?.classList.contains("is-hidden") === false;
+    isOpen ? closeSortMenu() : openSortMenu();
+  });
+
+  sortFilterOptions.forEach((option) => {
+    option.addEventListener("click", () => {
+      sortOrder = option.dataset.sort;
+      updateSortFilterUI();
+      refreshNoteList();
+      closeSortMenu();
+    });
   });
 
   // ----------------------------------------------------------------------
