@@ -19,6 +19,7 @@ let dateFilterStart = null; // string "YYYY-MM-DD" (input type=date), solo para 
 let dateFilterEnd = null; // string "YYYY-MM-DD" (input type=date), solo para "custom"
 let selectionMode = false;
 let selectedNoteIds = new Set();
+let selectedTrashIds = new Set();
 
 // ----------------------------------------------------------------------------
 // VALIDACIÓN
@@ -153,6 +154,18 @@ function formatUpdatedLabel(timestamp) {
   }
 
   return `Editada el ${formatFullDateTime(timestamp)}`;
+}
+
+/**
+ * Genera una etiqueta legible y relativa para la fecha en que una nota fue
+ * enviada a la papelera, pensada para mostrarse en la ficha de la papelera:
+ * "Eliminada hace 5 min", "Eliminada hoy, 14:32", etc. Reutiliza la misma
+ * lógica que `formatUpdatedLabel`, cambiando solo el verbo.
+ * @param {number} timestamp - Marca de tiempo en milisegundos (deletedAt).
+ * @returns {string} Texto relativo para mostrar en la ficha de la papelera.
+ */
+function formatDeletedLabel(timestamp) {
+  return formatUpdatedLabel(timestamp).replace(/^Editada/, "Eliminada");
 }
 
 /**
@@ -313,6 +326,7 @@ function createNote(content, title) {
     createdAt: now,
     updatedAt: now,
     favorite: false,
+    deletedAt: null,
   };
 }
 
@@ -493,62 +507,244 @@ function createPersistentNotesStore() {
   // --- Eliminar ---
 
   /**
-   * Elimina una nota del store por su ID.
-   * @param {string} id - ID (UUID) de la nota a eliminar.
-   * @returns {Result} `{ message, deletedId }` si fue eliminada.
+   * Envía una nota a la papelera (borrado suave). La nota deja de aparecer
+   * en la lista principal pero puede restaurarse o eliminarse para siempre
+   * desde la papelera.
+   * @param {string} id - ID (UUID) de la nota a enviar a la papelera.
+   * @returns {Result} `{ message, deletedId }` si fue movida a la papelera.
    */
   function deleteNote(id) {
     if (!isValidId(id)) return Result.fail("ID inválido");
 
-    const previousNotes = notes;
-    const filteredNotes = notes.filter((note) => note.id !== id);
+    const note = notes.find((note) => note.id === id && !note.deletedAt);
+    if (!note) return Result.fail("Nota no encontrada");
 
-    if (filteredNotes.length === previousNotes.length)
-      return Result.fail("Nota no encontrada");
+    const previousState = { ...note };
 
-    notes = filteredNotes;
+    note.deletedAt = Date.now();
 
     if (!saveToStorage(notes)) {
-      notes = previousNotes; // revertir: mantener la nota si no se pudo persistir el borrado
+      Object.assign(note, previousState); // revertir: mantener la nota activa si no se pudo persistir
       return Result.fail(
-        "No se pudo eliminar la nota (almacenamiento no disponible)",
+        "No se pudo mover la nota a la papelera (almacenamiento no disponible)",
       );
     }
 
-    return Result.ok({ message: "Nota eliminada exitosamente", deletedId: id });
+    return Result.ok({
+      message: "Nota movida a la papelera",
+      deletedId: id,
+    });
   }
 
   /**
-   * Elimina varias notas del store de una sola vez.
-   * @param {string[]} ids - IDs de las notas a eliminar.
-   * @returns {Result} `{ message, deletedCount }` si al menos una fue eliminada.
+   * Envía varias notas a la papelera de una sola vez (borrado suave).
+   * @param {string[]} ids - IDs de las notas a enviar a la papelera.
+   * @returns {Result} `{ message, deletedCount }` si al menos una fue movida.
    */
   function deleteNotes(ids) {
     if (!Array.isArray(ids) || ids.length === 0) {
       return Result.fail("No hay notas seleccionadas");
     }
 
-    const previousNotes = notes;
     const idSet = new Set(ids);
-    const filteredNotes = notes.filter((note) => !idSet.has(note.id));
-    const deletedCount = previousNotes.length - filteredNotes.length;
+    const affected = notes.filter(
+      (note) => idSet.has(note.id) && !note.deletedAt,
+    );
 
-    if (deletedCount === 0) return Result.fail("Notas no encontradas");
+    if (affected.length === 0) return Result.fail("Notas no encontradas");
+
+    const previousStates = affected.map((note) => ({ ...note }));
+    const now = Date.now();
+
+    affected.forEach((note) => {
+      note.deletedAt = now;
+    });
+
+    if (!saveToStorage(notes)) {
+      // revertir: restaurar el estado previo de cada nota afectada
+      previousStates.forEach((previous) => {
+        const note = notes.find((note) => note.id === previous.id);
+        if (note) Object.assign(note, previous);
+      });
+      return Result.fail(
+        "No se pudieron mover las notas a la papelera (almacenamiento no disponible)",
+      );
+    }
+
+    return Result.ok({
+      message:
+        affected.length === 1
+          ? "1 nota movida a la papelera"
+          : `${affected.length} notas movidas a la papelera`,
+      deletedCount: affected.length,
+    });
+  }
+
+  /**
+   * Restaura una nota de la papelera, devolviéndola a la lista principal.
+   * @param {string} id - ID (UUID) de la nota a restaurar.
+   * @returns {Result} `{ message, restoredId }` si fue restaurada.
+   */
+  function restoreNote(id) {
+    if (!isValidId(id)) return Result.fail("ID inválido");
+
+    const note = notes.find((note) => note.id === id && note.deletedAt);
+    if (!note) return Result.fail("Nota no encontrada en la papelera");
+
+    const previousState = { ...note };
+
+    note.deletedAt = null;
+
+    if (!saveToStorage(notes)) {
+      Object.assign(note, previousState); // revertir si no se pudo persistir
+      return Result.fail(
+        "No se pudo restaurar la nota (almacenamiento no disponible)",
+      );
+    }
+
+    return Result.ok({ message: "Nota restaurada", restoredId: id });
+  }
+
+  /**
+   * Restaura varias notas de la papelera de una sola vez.
+   * @param {string[]} ids - IDs de las notas a restaurar.
+   * @returns {Result} `{ message, restoredCount }` si al menos una fue restaurada.
+   */
+  function restoreNotes(ids) {
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return Result.fail("No hay notas seleccionadas");
+    }
+
+    const idSet = new Set(ids);
+    const affected = notes.filter(
+      (note) => idSet.has(note.id) && note.deletedAt,
+    );
+
+    if (affected.length === 0)
+      return Result.fail("Notas no encontradas en la papelera");
+
+    const previousStates = affected.map((note) => ({ ...note }));
+
+    affected.forEach((note) => {
+      note.deletedAt = null;
+    });
+
+    if (!saveToStorage(notes)) {
+      previousStates.forEach((previous) => {
+        const note = notes.find((note) => note.id === previous.id);
+        if (note) Object.assign(note, previous);
+      });
+      return Result.fail(
+        "No se pudieron restaurar las notas (almacenamiento no disponible)",
+      );
+    }
+
+    return Result.ok({
+      message:
+        affected.length === 1
+          ? "1 nota restaurada"
+          : `${affected.length} notas restauradas`,
+      restoredCount: affected.length,
+    });
+  }
+
+  /**
+   * Elimina definitivamente una nota que ya está en la papelera. No se
+   * puede deshacer.
+   * @param {string} id - ID (UUID) de la nota a eliminar para siempre.
+   * @returns {Result} `{ message, deletedId }` si fue eliminada.
+   */
+  function permanentlyDeleteNote(id) {
+    if (!isValidId(id)) return Result.fail("ID inválido");
+
+    const previousNotes = notes;
+    const filteredNotes = notes.filter(
+      (note) => !(note.id === id && note.deletedAt),
+    );
+
+    if (filteredNotes.length === previousNotes.length)
+      return Result.fail("Nota no encontrada en la papelera");
 
     notes = filteredNotes;
 
     if (!saveToStorage(notes)) {
-      notes = previousNotes; // revertir: mantener las notas si no se pudo persistir el borrado
+      notes = previousNotes; // revertir si no se pudo persistir el borrado
       return Result.fail(
-        "No se pudieron eliminar las notas (almacenamiento no disponible)",
+        "No se pudo eliminar la nota definitivamente (almacenamiento no disponible)",
+      );
+    }
+
+    return Result.ok({
+      message: "Nota eliminada definitivamente",
+      deletedId: id,
+    });
+  }
+
+  /**
+   * Elimina definitivamente varias notas que ya están en la papelera de una
+   * sola vez. No se puede deshacer.
+   * @param {string[]} ids - IDs de las notas a eliminar para siempre.
+   * @returns {Result} `{ message, deletedCount }` si al menos una fue eliminada.
+   */
+  function permanentlyDeleteNotes(ids) {
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return Result.fail("No hay notas seleccionadas");
+    }
+
+    const previousNotes = notes;
+    const idSet = new Set(ids);
+    const filteredNotes = notes.filter(
+      (note) => !(idSet.has(note.id) && note.deletedAt),
+    );
+    const deletedCount = previousNotes.length - filteredNotes.length;
+
+    if (deletedCount === 0)
+      return Result.fail("Notas no encontradas en la papelera");
+
+    notes = filteredNotes;
+
+    if (!saveToStorage(notes)) {
+      notes = previousNotes; // revertir si no se pudo persistir el borrado
+      return Result.fail(
+        "No se pudieron eliminar las notas definitivamente (almacenamiento no disponible)",
       );
     }
 
     return Result.ok({
       message:
         deletedCount === 1
-          ? "1 nota eliminada exitosamente"
-          : `${deletedCount} notas eliminadas exitosamente`,
+          ? "1 nota eliminada definitivamente"
+          : `${deletedCount} notas eliminadas definitivamente`,
+      deletedCount,
+    });
+  }
+
+  /**
+   * Vacía la papelera por completo: elimina definitivamente todas las
+   * notas que estén en ella. No se puede deshacer.
+   * @returns {Result} `{ message, deletedCount }`.
+   */
+  function emptyTrash() {
+    const previousNotes = notes;
+    const filteredNotes = notes.filter((note) => !note.deletedAt);
+    const deletedCount = previousNotes.length - filteredNotes.length;
+
+    if (deletedCount === 0) return Result.fail("La papelera ya está vacía");
+
+    notes = filteredNotes;
+
+    if (!saveToStorage(notes)) {
+      notes = previousNotes; // revertir si no se pudo persistir el borrado
+      return Result.fail(
+        "No se pudo vaciar la papelera (almacenamiento no disponible)",
+      );
+    }
+
+    return Result.ok({
+      message:
+        deletedCount === 1
+          ? "1 nota eliminada definitivamente"
+          : `${deletedCount} notas eliminadas definitivamente`,
       deletedCount,
     });
   }
@@ -594,11 +790,12 @@ function createPersistentNotesStore() {
   // --- Consultas ---
 
   /**
-   * Retorna todas las notas del store.
-   * @returns {Result} `{ notes }` con el arreglo completo de notas.
+   * Retorna todas las notas activas del store (excluye las que están en la
+   * papelera).
+   * @returns {Result} `{ notes }` con el arreglo completo de notas activas.
    */
   function getAllNotes() {
-    return Result.ok({ notes: cloneNotes(notes) });
+    return Result.ok({ notes: cloneNotes(notes.filter((note) => !note.deletedAt)) });
   }
 
   /**
@@ -621,7 +818,8 @@ function createPersistentNotesStore() {
     dateFrom = null,
     dateTo = null,
   } = {}) {
-    let result = notes;
+    // Las notas en la papelera nunca aparecen en la lista principal.
+    let result = notes.filter((note) => !note.deletedAt);
 
     if (favoritesOnly) {
       result = result.filter((note) => note.favorite === true);
@@ -647,11 +845,43 @@ function createPersistentNotesStore() {
   }
 
   /**
-   * Retorna la cantidad total de notas en el store.
+   * Retorna la cantidad total de notas en el store (activas, sin contar la
+   * papelera).
    * @returns {number}
    */
   function getNotesCount() {
-    return notes.length;
+    return notes.filter((note) => !note.deletedAt).length;
+  }
+
+  /**
+   * Filtra y ordena las notas que están en la papelera, de la más
+   * recientemente eliminada a la más antigua. Reutiliza la misma búsqueda
+   * por texto que `queryNotes`.
+   * @param {{ searchQuery?: string }} [filters]
+   * @returns {Result} `{ notes }` con las notas en la papelera.
+   */
+  function queryTrash({ searchQuery = "" } = {}) {
+    let result = notes.filter((note) => note.deletedAt);
+
+    const normalizedQuery = searchQuery.trim().toLowerCase();
+
+    if (normalizedQuery !== "") {
+      result = result.filter((note) =>
+        `${note.title} ${note.content}`.toLowerCase().includes(normalizedQuery),
+      );
+    }
+
+    const sorted = cloneNotes(result).sort((a, b) => b.deletedAt - a.deletedAt);
+
+    return Result.ok({ notes: sorted });
+  }
+
+  /**
+   * Retorna la cantidad de notas actualmente en la papelera.
+   * @returns {number}
+   */
+  function getTrashCount() {
+    return notes.filter((note) => note.deletedAt).length;
   }
 
   /**
@@ -675,11 +905,18 @@ function createPersistentNotesStore() {
     updateNote,
     deleteNote,
     deleteNotes,
+    restoreNote,
+    restoreNotes,
+    permanentlyDeleteNote,
+    permanentlyDeleteNotes,
+    emptyTrash,
     setFavoriteForNotes,
     getAllNotes,
     getNotesByIds,
     queryNotes,
+    queryTrash,
     getNotesCount,
+    getTrashCount,
   };
 }
 
@@ -778,6 +1015,89 @@ function renderNoteList(notes) {
   });
 
   noteListElement.append(fragment);
+}
+
+/**
+ * Renderiza la lista de notas dentro del panel de la papelera.
+ * @param {Array} trashedNotes - Notas actualmente en la papelera.
+ */
+function renderTrashList(trashedNotes) {
+  const trashListElement = document.querySelector("#trash-list");
+
+  if (!trashListElement) {
+    console.error("No se encontró el elemento #trash-list");
+    return;
+  }
+
+  trashListElement.innerHTML = "";
+
+  if (!Array.isArray(trashedNotes) || trashedNotes.length === 0) {
+    trashListElement.innerHTML =
+      '<p class="empty-message">La papelera está vacía.</p>';
+    return;
+  }
+
+  const fragment = document.createDocumentFragment();
+
+  trashedNotes.forEach((note) => {
+    const isSelected = selectedTrashIds.has(note.id);
+
+    const trashItem = document.createElement("div");
+    trashItem.className = `trash-item ${isSelected ? "is-selected" : ""}`.trim();
+    trashItem.dataset.id = note.id;
+
+    const checkboxLabel = document.createElement("label");
+    checkboxLabel.className = "trash-item-checkbox";
+
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.dataset.id = note.id;
+    checkbox.checked = isSelected;
+    checkbox.setAttribute("aria-label", `Seleccionar nota: ${note.title}`);
+
+    checkboxLabel.append(checkbox);
+
+    const body = document.createElement("div");
+    body.className = "trash-item-body";
+
+    const title = document.createElement("h4");
+    title.textContent = note.title;
+
+    const excerpt = document.createElement("p");
+    excerpt.textContent = note.excerpt;
+
+    const date = document.createElement("small");
+    date.textContent = formatDeletedLabel(note.deletedAt);
+    date.title = formatFullDateTime(note.deletedAt);
+
+    body.append(title, excerpt, date);
+
+    const actions = document.createElement("div");
+    actions.className = "trash-item-actions";
+
+    const restoreButton = document.createElement("button");
+    restoreButton.type = "button";
+    restoreButton.className = "btn-icon trash-restore-item";
+    restoreButton.dataset.id = note.id;
+    restoreButton.title = "Restaurar nota";
+    restoreButton.setAttribute("aria-label", "Restaurar nota");
+    restoreButton.textContent = "♻";
+
+    const deleteForeverButton = document.createElement("button");
+    deleteForeverButton.type = "button";
+    deleteForeverButton.className = "btn-icon btn-icon-danger trash-delete-item";
+    deleteForeverButton.dataset.id = note.id;
+    deleteForeverButton.title = "Eliminar definitivamente";
+    deleteForeverButton.setAttribute("aria-label", "Eliminar definitivamente");
+    deleteForeverButton.textContent = "🗑";
+
+    actions.append(restoreButton, deleteForeverButton);
+
+    trashItem.append(checkboxLabel, body, actions);
+    fragment.append(trashItem);
+  });
+
+  trashListElement.append(fragment);
 }
 
 /**
@@ -1049,6 +1369,17 @@ function initializeEventListeners(store) {
     renderNoteList(getVisibleNotes(store));
   };
 
+  // Helpers de papelera (se definen temprano porque los usan también los
+  // flujos de borrado normales, para mantener el contador actualizado).
+  const trashCountBadge = document.querySelector("#trash-count-badge");
+
+  const updateTrashBadge = () => {
+    if (!trashCountBadge) return;
+    const count = store.getTrashCount();
+    trashCountBadge.textContent = String(count);
+    trashCountBadge.classList.toggle("is-hidden", count === 0);
+  };
+
   //Nota Nueva
   const newNoteButton = document.querySelector("#new-note-button");
 
@@ -1103,7 +1434,7 @@ function initializeEventListeners(store) {
     const confirmed = await showConfirmDialog({
       title: "Eliminar nota",
       message:
-        "¿Estás seguro de que querés eliminar esta nota? Esta acción no se puede deshacer.",
+        "¿Estás seguro de que querés eliminar esta nota? Podrás restaurarla desde la papelera.",
       confirmText: "Eliminar",
       cancelText: "Cancelar",
       danger: true,
@@ -1113,7 +1444,7 @@ function initializeEventListeners(store) {
       const result = store.deleteNote(currentNoteId);
 
       if (result.success) {
-        showMessage("Nota eliminada", false);
+        showMessage(result.data.message, false);
 
         const editorTextArea = document.querySelector("#editor-textarea");
         if (editorTextArea) editorTextArea.value = "";
@@ -1126,6 +1457,7 @@ function initializeEventListeners(store) {
         updateDeleteButtonState();
         refreshNoteList();
         resetScrollListNotes();
+        updateTrashBadge();
       } else {
         showMessage(result.message, true);
       }
@@ -1271,6 +1603,7 @@ function initializeEventListeners(store) {
     if (event.key === "Escape") {
       closeNotesMenu();
       closeDateFilterMenu();
+      if (trashOverlay?.classList.contains("is-visible")) closeTrashDialog();
     }
   });
 
@@ -1576,8 +1909,8 @@ function initializeEventListeners(store) {
 
     const confirmMessage =
       ids.length === 1
-        ? "¿Eliminar la nota seleccionada? Esta acción no se puede deshacer."
-        : `¿Eliminar las ${ids.length} notas seleccionadas? Esta acción no se puede deshacer.`;
+        ? "¿Eliminar la nota seleccionada? Podrás restaurarla desde la papelera."
+        : `¿Eliminar las ${ids.length} notas seleccionadas? Podrás restaurarlas desde la papelera.`;
 
     const confirmed = await showConfirmDialog({
       title: ids.length === 1 ? "Eliminar nota" : "Eliminar notas",
@@ -1609,7 +1942,235 @@ function initializeEventListeners(store) {
     showMessage(result.data.message, false);
 
     exitSelectionMode();
+    updateTrashBadge();
   });
+
+  // ----------------------------------------------------------------------
+  // PAPELERA (restaurar, eliminar definitivamente, vaciar)
+  // ----------------------------------------------------------------------
+
+  const trashOverlay = document.querySelector("#trash-overlay");
+  const trashDialog = document.querySelector("#trash-dialog");
+  const trashCloseButton = document.querySelector("#trash-close-button");
+  const trashListContainer = document.querySelector("#trash-list");
+  const trashSelectAllCheckbox = document.querySelector(
+    "#trash-select-all-checkbox",
+  );
+  const trashRestoreButton = document.querySelector("#trash-restore-button");
+  const trashDeleteButton = document.querySelector("#trash-delete-button");
+  const trashEmptyButton = document.querySelector("#trash-empty-button");
+  const menuTrashItem = document.querySelector("#menu-trash");
+
+  // Devuelve las notas actualmente en la papelera (ya ordenadas por el store).
+  const getTrashedNotes = () => store.queryTrash().data.notes;
+
+  // Refleja en la UI cuántas notas de la papelera hay seleccionadas, y
+  // habilita/deshabilita los botones en lote, igual que en la selección
+  // múltiple de la lista principal.
+  const updateTrashActionsUI = () => {
+    const count = selectedTrashIds.size;
+
+    [trashRestoreButton, trashDeleteButton].forEach((button) => {
+      if (button) button.disabled = count === 0;
+    });
+
+    if (trashSelectAllCheckbox) {
+      const trashedNotes = getTrashedNotes();
+      const selectedCount = trashedNotes.filter((note) =>
+        selectedTrashIds.has(note.id),
+      ).length;
+
+      trashSelectAllCheckbox.checked =
+        trashedNotes.length > 0 && selectedCount === trashedNotes.length;
+      trashSelectAllCheckbox.indeterminate =
+        selectedCount > 0 && selectedCount < trashedNotes.length;
+    }
+  };
+
+  const refreshTrashList = () => {
+    renderTrashList(getTrashedNotes());
+    updateTrashActionsUI();
+  };
+
+  const openTrashDialog = () => {
+    selectedTrashIds.clear();
+    refreshTrashList();
+    trashOverlay?.classList.add("is-visible");
+    trashCloseButton?.focus();
+  };
+
+  const closeTrashDialog = () => {
+    trashOverlay?.classList.remove("is-visible");
+    selectedTrashIds.clear();
+  };
+
+  menuTrashItem?.addEventListener("click", () => {
+    closeNotesMenu();
+    openTrashDialog();
+  });
+
+  trashCloseButton?.addEventListener("click", closeTrashDialog);
+
+  trashOverlay?.addEventListener("click", (event) => {
+    if (event.target === trashOverlay) closeTrashDialog();
+  });
+
+  // Seleccionar/deseleccionar todas las notas de la papelera
+  trashSelectAllCheckbox?.addEventListener("change", () => {
+    const trashedNotes = getTrashedNotes();
+
+    trashedNotes.forEach((note) => {
+      if (trashSelectAllCheckbox.checked) {
+        selectedTrashIds.add(note.id);
+      } else {
+        selectedTrashIds.delete(note.id);
+      }
+    });
+
+    refreshTrashList();
+  });
+
+  trashListContainer?.addEventListener("change", (event) => {
+    if (
+      !event.target.matches(".trash-item-checkbox input[type='checkbox']")
+    )
+      return;
+
+    const noteId = event.target.dataset.id;
+
+    if (event.target.checked) {
+      selectedTrashIds.add(noteId);
+    } else {
+      selectedTrashIds.delete(noteId);
+    }
+
+    document
+      .querySelector(`.trash-item[data-id="${noteId}"]`)
+      ?.classList.toggle("is-selected", event.target.checked);
+
+    updateTrashActionsUI();
+  });
+
+  // Restaurar o eliminar definitivamente una nota puntual desde su ficha
+  trashListContainer?.addEventListener("click", async (event) => {
+    const restoreItemButton = event.target.closest(".trash-restore-item");
+
+    if (restoreItemButton) {
+      const noteId = restoreItemButton.dataset.id;
+      const result = store.restoreNote(noteId);
+
+      if (!result.success) return showMessage(result.message, true);
+
+      showMessage(result.data.message, false);
+      selectedTrashIds.delete(noteId);
+      refreshTrashList();
+      refreshNoteList();
+      updateTrashBadge();
+      return;
+    }
+
+    const deleteItemButton = event.target.closest(".trash-delete-item");
+
+    if (deleteItemButton) {
+      const noteId = deleteItemButton.dataset.id;
+
+      const confirmed = await showConfirmDialog({
+        title: "Eliminar definitivamente",
+        message:
+          "Esta nota se eliminará para siempre y no podrá recuperarse. ¿Continuar?",
+        confirmText: "Eliminar para siempre",
+        cancelText: "Cancelar",
+        danger: true,
+      });
+
+      if (!confirmed) return;
+
+      const result = store.permanentlyDeleteNote(noteId);
+
+      if (!result.success) return showMessage(result.message, true);
+
+      showMessage(result.data.message, false);
+      selectedTrashIds.delete(noteId);
+      refreshTrashList();
+      updateTrashBadge();
+    }
+  });
+
+  // Restaurar todas las notas seleccionadas de la papelera
+  trashRestoreButton?.addEventListener("click", () => {
+    const ids = Array.from(selectedTrashIds);
+    if (ids.length === 0) return;
+
+    const result = store.restoreNotes(ids);
+
+    if (!result.success) return showMessage(result.message, true);
+
+    showMessage(result.data.message, false);
+    selectedTrashIds.clear();
+    refreshTrashList();
+    refreshNoteList();
+    updateTrashBadge();
+  });
+
+  // Eliminar definitivamente todas las notas seleccionadas de la papelera
+  trashDeleteButton?.addEventListener("click", async () => {
+    const ids = Array.from(selectedTrashIds);
+    if (ids.length === 0) return;
+
+    const confirmMessage =
+      ids.length === 1
+        ? "¿Eliminar definitivamente la nota seleccionada? Esta acción no se puede deshacer."
+        : `¿Eliminar definitivamente las ${ids.length} notas seleccionadas? Esta acción no se puede deshacer.`;
+
+    const confirmed = await showConfirmDialog({
+      title: "Eliminar definitivamente",
+      message: confirmMessage,
+      confirmText: "Eliminar para siempre",
+      cancelText: "Cancelar",
+      danger: true,
+    });
+
+    if (!confirmed) return;
+
+    const result = store.permanentlyDeleteNotes(ids);
+
+    if (!result.success) return showMessage(result.message, true);
+
+    showMessage(result.data.message, false);
+    selectedTrashIds.clear();
+    refreshTrashList();
+    updateTrashBadge();
+  });
+
+  // Vaciar la papelera por completo
+  trashEmptyButton?.addEventListener("click", async () => {
+    if (store.getTrashCount() === 0) {
+      return showMessage("La papelera ya está vacía", true);
+    }
+
+    const confirmed = await showConfirmDialog({
+      title: "Vaciar papelera",
+      message:
+        "Se eliminarán definitivamente todas las notas de la papelera. Esta acción no se puede deshacer.",
+      confirmText: "Vaciar papelera",
+      cancelText: "Cancelar",
+      danger: true,
+    });
+
+    if (!confirmed) return;
+
+    const result = store.emptyTrash();
+
+    if (!result.success) return showMessage(result.message, true);
+
+    showMessage(result.data.message, false);
+    selectedTrashIds.clear();
+    refreshTrashList();
+    updateTrashBadge();
+  });
+
+  // Mantener el contador de la papelera al día al inicializar la app
+  updateTrashBadge();
 }
 
 // ----------------------------------------------------------------------------

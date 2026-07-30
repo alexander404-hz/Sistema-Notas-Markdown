@@ -302,6 +302,30 @@ header h1::before {
   outline-offset: -2px;
 }
 
+.notes-menu-item-trash {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.trash-count-badge {
+  flex-shrink: 0;
+  min-width: 1.2rem;
+  padding: 0.05rem 0.35rem;
+  background-color: var(--danger-soft);
+  color: var(--danger);
+  border-radius: 999px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-align: center;
+  line-height: 1.3;
+}
+
+.trash-count-badge.is-hidden {
+  display: none;
+}
+
 .btn-icon {
   width: 2.3rem;
   height: 2.3rem;
@@ -1029,7 +1053,7 @@ header h1::before {
 .confirm-dialog-overlay {
   position: fixed;
   inset: 0;
-  z-index: 100;
+  z-index: 110;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1122,6 +1146,211 @@ header h1::before {
   cursor: not-allowed;
   transform: none;
   box-shadow: none;
+}
+
+/* ----------------------------------------------------------------------------
+   PAPELERA — modal con notas eliminadas, restaurables o borrables definitivamente
+---------------------------------------------------------------------------- */
+.trash-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  background-color: rgba(34, 31, 26, 0.45);
+  backdrop-filter: blur(2px);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.18s var(--ease);
+}
+
+.trash-overlay.is-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.trash-dialog {
+  background-color: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-top: 3px solid var(--danger);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sheet);
+  padding: 1.4rem;
+  max-width: 34rem;
+  width: 100%;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+  transform: scale(0.95) translateY(8px);
+  transition: transform 0.18s var(--ease);
+}
+
+.trash-overlay.is-visible .trash-dialog {
+  transform: scale(1) translateY(0);
+}
+
+.trash-dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.trash-dialog-header h3 {
+  font-family: var(--font-mono);
+  font-size: 1rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  color: var(--ink);
+}
+
+.trash-dialog-hint {
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-size: 0.82rem;
+  color: var(--ink-faint);
+  margin-top: 0.3rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px dashed var(--border-strong);
+}
+
+.trash-dialog-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  padding: 0.75rem 0;
+}
+
+.trash-dialog-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.trash-dialog-actions .btn {
+  padding: 0.45rem 0.8rem;
+  font-size: 0.72rem;
+}
+
+.trash-list {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.2rem 0.2rem 0.2rem 0;
+  min-height: 4rem;
+}
+
+.trash-list::-webkit-scrollbar {
+  width: 8px;
+}
+
+.trash-list::-webkit-scrollbar-thumb {
+  background-color: var(--border-strong);
+  border-radius: 4px;
+}
+
+.trash-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  background-color: var(--surface-sunken);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--danger);
+  border-radius: var(--radius-sm);
+  padding: 0.7rem 0.8rem;
+  animation: noteItemIn 0.18s var(--ease);
+}
+
+.trash-item.is-selected {
+  border-color: var(--accent);
+  border-left-color: var(--accent);
+  background-color: var(--accent-soft);
+}
+
+.trash-item-checkbox {
+  display: flex;
+  align-items: center;
+  padding-top: 0.15rem;
+  cursor: pointer;
+}
+
+.trash-item-checkbox input[type="checkbox"] {
+  width: 1.05rem;
+  height: 1.05rem;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.trash-item-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.trash-item-body h4 {
+  font-family: var(--font-mono);
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+  margin-bottom: 0.3rem;
+}
+
+.trash-item-body p {
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-size: 0.8rem;
+  color: var(--ink-soft);
+  margin-bottom: 0.35rem;
+}
+
+.trash-item-body small {
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.trash-item-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  flex-shrink: 0;
+}
+
+.trash-item-actions .btn-icon {
+  width: 2rem;
+  height: 2rem;
+  font-size: 0.95rem;
+}
+
+.trash-dialog-footer {
+  padding-top: 0.75rem;
+  margin-top: 0.5rem;
+  border-top: 1px dashed var(--border-strong);
+  display: flex;
+  justify-content: flex-end;
+}
+
+@media (max-width: 640px) {
+  .trash-dialog-controls {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .trash-dialog-actions {
+    width: 100%;
+  }
+
+  .trash-dialog-actions .btn {
+    flex: 1;
+  }
 }
 
 .btn:disabled:hover {

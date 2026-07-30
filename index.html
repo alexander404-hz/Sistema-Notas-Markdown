@@ -66,6 +66,17 @@
                     >
                       ⭳ Exportar todas
                     </button>
+                    <button
+                      id="menu-trash"
+                      class="notes-menu-item notes-menu-item-trash"
+                      role="menuitem"
+                    >
+                      <span>🗑 Papelera</span>
+                      <span
+                        id="trash-count-badge"
+                        class="trash-count-badge is-hidden"
+                      ></span>
+                    </button>
                   </div>
                 </div>
               </div>
@@ -285,6 +296,69 @@
             id="confirm-dialog-confirm"
             class="btn btn-primary"
           ></button>
+        </div>
+      </div>
+    </div>
+    <div id="trash-overlay" class="trash-overlay">
+      <div
+        id="trash-dialog"
+        class="trash-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="trash-dialog-title"
+      >
+        <div class="trash-dialog-header">
+          <h3 id="trash-dialog-title">🗑 Papelera</h3>
+          <button
+            type="button"
+            id="trash-close-button"
+            class="btn-icon"
+            title="Cerrar"
+            aria-label="Cerrar papelera"
+          >
+            ✕
+          </button>
+        </div>
+        <p class="trash-dialog-hint">
+          Las notas eliminadas quedan acá antes de borrarse para siempre.
+        </p>
+        <div class="trash-dialog-controls">
+          <label class="bulk-select-all">
+            <input
+              type="checkbox"
+              id="trash-select-all-checkbox"
+              aria-label="Seleccionar todas las notas de la papelera"
+            />
+            <span>Seleccionar todas</span>
+          </label>
+          <div class="trash-dialog-actions">
+            <button
+              type="button"
+              id="trash-restore-button"
+              class="btn btn-ghost"
+              disabled
+            >
+              ♻ Restaurar
+            </button>
+            <button
+              type="button"
+              id="trash-delete-button"
+              class="btn btn-danger"
+              disabled
+            >
+              Eliminar definitivamente
+            </button>
+          </div>
+        </div>
+        <div id="trash-list" class="trash-list"></div>
+        <div class="trash-dialog-footer">
+          <button
+            type="button"
+            id="trash-empty-button"
+            class="btn btn-danger-solid"
+          >
+            Vaciar papelera
+          </button>
         </div>
       </div>
     </div>
