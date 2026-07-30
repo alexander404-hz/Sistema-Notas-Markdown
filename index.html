@@ -140,6 +140,19 @@
                       ⭳ Exportar todas
                     </button>
                     <button
+                      id="menu-import-notes"
+                      class="notes-menu-item"
+                      role="menuitem"
+                    >
+                      ⭱ Importar notas
+                    </button>
+                    <input
+                      type="file"
+                      id="import-file-input"
+                      accept=".json,application/json"
+                      class="visually-hidden"
+                    />
+                    <button
                       id="menu-trash"
                       class="notes-menu-item notes-menu-item-trash"
                       role="menuitem"
@@ -494,6 +507,52 @@
             Vaciar papelera
           </button>
         </div>
+      </div>
+    </div>
+    <div id="import-overlay" class="trash-overlay">
+      <div
+        id="import-dialog"
+        class="trash-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="import-dialog-title"
+      >
+        <div class="trash-dialog-header">
+          <h3 id="import-dialog-title">⭱ Importar notas</h3>
+          <button
+            type="button"
+            id="import-close-button"
+            class="btn-icon"
+            title="Cerrar"
+            aria-label="Cerrar importación"
+          >
+            ✕
+          </button>
+        </div>
+        <p id="import-dialog-hint" class="trash-dialog-hint">
+          Elegí qué notas del archivo querés importar.
+        </p>
+        <div class="trash-dialog-controls">
+          <label class="bulk-select-all">
+            <input
+              type="checkbox"
+              id="import-select-all-checkbox"
+              aria-label="Seleccionar todas las notas a importar"
+            />
+            <span>Seleccionar todas</span>
+          </label>
+          <div class="trash-dialog-actions">
+            <button
+              type="button"
+              id="import-confirm-button"
+              class="btn btn-primary"
+              disabled
+            >
+              ⭱ Importar seleccionadas
+            </button>
+          </div>
+        </div>
+        <div id="import-list" class="trash-list"></div>
       </div>
     </div>
     <script

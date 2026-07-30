@@ -21,6 +21,8 @@ let sortOrder = "updated-desc"; // ver SORT_COMPARATORS para las opciones dispon
 let selectionMode = false;
 let selectedNoteIds = new Set();
 let selectedTrashIds = new Set();
+let importCandidates = []; // notas parseadas del archivo .json, pendientes de revisión
+let selectedImportIndexes = new Set();
 
 // ----------------------------------------------------------------------------
 // VALIDACIÓN
@@ -289,6 +291,57 @@ function exportNotesAsJSON(notes) {
   URL.revokeObjectURL(url);
 }
 
+/**
+ * Parsea y valida el texto de un archivo .json de notas importado.
+ * Acepta tanto un array de notas como un único objeto nota suelto.
+ * Cada elemento válido (con `content` no vacío) se normaliza con
+ * `title` y `excerpt` listos para mostrarse en el diálogo de importación.
+ * @param {string} jsonText - Contenido crudo del archivo .json.
+ * @returns {{ candidates: Array, skippedCount: number, error: string|null }}
+ */
+function parseImportCandidates(jsonText) {
+  let parsed;
+
+  try {
+    parsed = JSON.parse(jsonText);
+  } catch {
+    return {
+      candidates: [],
+      skippedCount: 0,
+      error: "El archivo no es un JSON válido",
+    };
+  }
+
+  const rawList = Array.isArray(parsed) ? parsed : [parsed];
+
+  if (rawList.length === 0) {
+    return { candidates: [], skippedCount: 0, error: "El archivo está vacío" };
+  }
+
+  let skippedCount = 0;
+
+  const candidates = rawList.reduce((acc, raw) => {
+    if (!raw || !isValidString(raw.content)) {
+      skippedCount += 1;
+      return acc;
+    }
+
+    const content = raw.content.trim();
+
+    acc.push({
+      content,
+      title: isValidString(raw.title) ? raw.title.trim() : deriveTitle(content),
+      excerpt: deriveExcerpt(content, EXCERPT_MAX_LEN),
+      favorite: raw.favorite === true,
+      createdAt: isValidNumber(raw.createdAt) ? raw.createdAt : null,
+    });
+
+    return acc;
+  }, []);
+
+  return { candidates, skippedCount, error: null };
+}
+
 // --------------------------------------------
 // GENERACIÓN DE ID ÚNICO
 // --------------------------------------------
@@ -432,6 +485,53 @@ function createPersistentNotesStore() {
     }
 
     return Result.ok({ note: { ...newNote } });
+  }
+
+  /**
+   * Agrega varias notas al store a partir de datos crudos importados (por
+   * ejemplo, de un archivo .json exportado previamente). A cada nota se le
+   * genera un ID nuevo para evitar colisiones con las notas existentes;
+   * `favorite` y `createdAt` se conservan del origen si son válidos.
+   * @param {Array} rawNotes - Notas candidatas a importar (`{ content, title?, favorite?, createdAt? }`).
+   * @returns {Result} `{ notes }` con las notas efectivamente creadas.
+   */
+  function importNotes(rawNotes) {
+    if (!Array.isArray(rawNotes) || rawNotes.length === 0) {
+      return Result.fail("No hay notas para importar");
+    }
+
+    const createdNotes = [];
+
+    rawNotes.forEach((raw) => {
+      if (!raw || !isValidString(raw.content)) return;
+
+      const note = createNote(raw.content, raw.title);
+      if (!note) return;
+
+      if (typeof raw.favorite === "boolean") note.favorite = raw.favorite;
+      if (isValidNumber(raw.createdAt)) {
+        note.createdAt = raw.createdAt;
+        note.updatedAt = raw.createdAt;
+      }
+
+      createdNotes.push(note);
+    });
+
+    if (createdNotes.length === 0) {
+      return Result.fail("Ninguna nota tenía contenido válido para importar");
+    }
+
+    notes.push(...createdNotes);
+
+    if (!saveToStorage(notes)) {
+      // revertir: no dejar el store en memoria desincronizado del storage
+      notes.splice(notes.length - createdNotes.length, createdNotes.length);
+      return Result.fail(
+        "No se pudo guardar las notas (almacenamiento lleno o no disponible)",
+      );
+    }
+
+    return Result.ok({ notes: cloneNotes(createdNotes) });
   }
 
   // --- Consultar ---
@@ -880,6 +980,7 @@ function createPersistentNotesStore() {
 
   return {
     addNote,
+    importNotes,
     getNoteById,
     updateNote,
     deleteNote,
@@ -1079,6 +1180,73 @@ function renderTrashList(trashedNotes) {
   });
 
   trashListElement.append(fragment);
+}
+
+/**
+ * Renderiza la lista de notas candidatas dentro del diálogo de importación.
+ * Cada candidata se identifica por su posición en `importCandidates`
+ * (no tiene un ID real todavía, porque no fue agregada al store).
+ * @param {Array} candidates - Notas candidatas a importar.
+ */
+function renderImportList(candidates) {
+  const importListElement = document.querySelector("#import-list");
+
+  if (!importListElement) {
+    console.error("No se encontró el elemento #import-list");
+    return;
+  }
+
+  importListElement.innerHTML = "";
+
+  if (!Array.isArray(candidates) || candidates.length === 0) {
+    importListElement.innerHTML =
+      '<p class="empty-message">No se encontraron notas válidas en el archivo.</p>';
+    return;
+  }
+
+  const fragment = document.createDocumentFragment();
+
+  candidates.forEach((note, index) => {
+    const isSelected = selectedImportIndexes.has(index);
+
+    const importItem = document.createElement("div");
+    importItem.className =
+      `import-item ${isSelected ? "is-selected" : ""}`.trim();
+    importItem.dataset.index = String(index);
+
+    const checkboxLabel = document.createElement("label");
+    checkboxLabel.className = "import-item-checkbox";
+
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.dataset.index = String(index);
+    checkbox.checked = isSelected;
+    checkbox.setAttribute("aria-label", `Seleccionar nota: ${note.title}`);
+
+    checkboxLabel.append(checkbox);
+
+    const body = document.createElement("div");
+    body.className = "import-item-body";
+
+    const title = document.createElement("h4");
+    title.textContent = note.title;
+
+    const excerpt = document.createElement("p");
+    excerpt.textContent = note.excerpt;
+
+    body.append(title, excerpt);
+
+    if (isValidNumber(note.createdAt)) {
+      const date = document.createElement("small");
+      date.textContent = formatFullDate(note.createdAt);
+      body.append(date);
+    }
+
+    importItem.append(checkboxLabel, body);
+    fragment.append(importItem);
+  });
+
+  importListElement.append(fragment);
 }
 
 /**
@@ -1643,6 +1811,8 @@ function initializeEventListeners(store) {
       closeDateFilterMenu();
       closeSortMenu();
       if (trashOverlay?.classList.contains("is-visible")) closeTrashDialog();
+      if (importOverlay?.classList.contains("is-visible"))
+        closeImportDialog();
     }
   });
 
@@ -2265,6 +2435,158 @@ function initializeEventListeners(store) {
     selectedTrashIds.clear();
     refreshTrashList();
     updateTrashBadge();
+  });
+
+  // ----------------------------------------------------------------------
+  // IMPORTAR NOTAS DESDE UN ARCHIVO .JSON
+  // ----------------------------------------------------------------------
+
+  const menuImportItem = document.querySelector("#menu-import-notes");
+  const importFileInput = document.querySelector("#import-file-input");
+  const importOverlay = document.querySelector("#import-overlay");
+  const importCloseButton = document.querySelector("#import-close-button");
+  const importListContainer = document.querySelector("#import-list");
+  const importHint = document.querySelector("#import-dialog-hint");
+  const importSelectAllCheckbox = document.querySelector(
+    "#import-select-all-checkbox",
+  );
+  const importConfirmButton = document.querySelector(
+    "#import-confirm-button",
+  );
+
+  // Mismo criterio que updateTrashActionsUI/updateBulkActionsUI, pero para
+  // las notas candidatas a importar.
+  const updateImportActionsUI = () => {
+    const count = selectedImportIndexes.size;
+
+    if (importConfirmButton) {
+      importConfirmButton.disabled = count === 0;
+      importConfirmButton.textContent =
+        count === 0
+          ? "⭱ Importar seleccionadas"
+          : `⭱ Importar seleccionadas (${count})`;
+    }
+
+    if (importSelectAllCheckbox) {
+      const total = importCandidates.length;
+      importSelectAllCheckbox.checked = total > 0 && count === total;
+      importSelectAllCheckbox.indeterminate = count > 0 && count < total;
+    }
+  };
+
+  const refreshImportList = () => {
+    renderImportList(importCandidates);
+    updateImportActionsUI();
+  };
+
+  const closeImportDialog = () => {
+    importOverlay?.classList.remove("is-visible");
+    importCandidates = [];
+    selectedImportIndexes.clear();
+    if (importFileInput) importFileInput.value = ""; // permite reimportar el mismo archivo
+  };
+
+  menuImportItem?.addEventListener("click", () => {
+    closeNotesMenu();
+    importFileInput?.click();
+  });
+
+  importFileInput?.addEventListener("change", async () => {
+    const file = importFileInput.files?.[0];
+    if (!file) return;
+
+    let text;
+    try {
+      text = await file.text();
+    } catch {
+      importFileInput.value = "";
+      return showMessage("No se pudo leer el archivo", true);
+    }
+
+    const { candidates, skippedCount, error } = parseImportCandidates(text);
+
+    if (error) {
+      importFileInput.value = "";
+      return showMessage(error, true);
+    }
+
+    if (candidates.length === 0) {
+      importFileInput.value = "";
+      return showMessage(
+        "El archivo no tiene notas válidas para importar",
+        true,
+      );
+    }
+
+    importCandidates = candidates;
+    // Todas seleccionadas por defecto: el caso más común es importar todo,
+    // y desmarcar una o dos es más rápido que tener que tildarlas todas.
+    selectedImportIndexes = new Set(candidates.map((_, index) => index));
+
+    if (importHint) {
+      importHint.textContent =
+        skippedCount > 0
+          ? `Se encontraron ${candidates.length} notas válidas (se ignoraron ${skippedCount} sin contenido). Elegí cuáles importar.`
+          : `Se encontraron ${candidates.length} notas. Elegí cuáles importar.`;
+    }
+
+    refreshImportList();
+    importOverlay?.classList.add("is-visible");
+    importCloseButton?.focus();
+  });
+
+  importCloseButton?.addEventListener("click", closeImportDialog);
+
+  importOverlay?.addEventListener("click", (event) => {
+    if (event.target === importOverlay) closeImportDialog();
+  });
+
+  importSelectAllCheckbox?.addEventListener("change", () => {
+    selectedImportIndexes = importSelectAllCheckbox.checked
+      ? new Set(importCandidates.map((_, index) => index))
+      : new Set();
+
+    refreshImportList();
+  });
+
+  importListContainer?.addEventListener("change", (event) => {
+    if (!event.target.matches(".import-item-checkbox input[type='checkbox']"))
+      return;
+
+    const index = Number(event.target.dataset.index);
+
+    if (event.target.checked) {
+      selectedImportIndexes.add(index);
+    } else {
+      selectedImportIndexes.delete(index);
+    }
+
+    document
+      .querySelector(`.import-item[data-index="${index}"]`)
+      ?.classList.toggle("is-selected", event.target.checked);
+
+    updateImportActionsUI();
+  });
+
+  importConfirmButton?.addEventListener("click", () => {
+    const selected = importCandidates.filter((_, index) =>
+      selectedImportIndexes.has(index),
+    );
+
+    if (selected.length === 0) return;
+
+    const result = store.importNotes(selected);
+
+    if (!result.success) return showMessage(result.message, true);
+
+    const count = result.data.notes.length;
+    showMessage(
+      count === 1 ? "Se importó 1 nota" : `Se importaron ${count} notas`,
+      false,
+    );
+
+    closeImportDialog();
+    refreshNoteList();
   });
 
   // Mantener el contador de la papelera al día al inicializar la app
