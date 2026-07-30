@@ -1,0 +1,23 @@
+{
+  "name": "Sistema de Notas Markdown",
+  "short_name": "Notas Markdown",
+  "lang": "es-SV",
+  "dir": "ltr",
+  "start_url": "/Sistema-Notas-Markdown/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f5f5f5",
+  "theme_color": "#a2791c",
+  "icons": [
+    {
+      "src": "assets/icons/android-chrome-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "assets/icons/android-chrome-512x512.webp",
+      "sizes": "512x512",
+      "type": "image/webp"
+    }
+  ]
+}
