@@ -1267,6 +1267,11 @@ header h1::before {
   cursor: not-allowed;
   transform: none;
   box-shadow: none;
+  /* Evita que :hover (background/color de .btn-danger, .btn-success, etc.)
+     se siga aplicando visualmente cuando el botón está deshabilitado,
+     como pasaba con "Eliminar definitivamente" en la papelera sin nada
+     seleccionado. */
+  pointer-events: none;
 }
 
 /* ----------------------------------------------------------------------------
