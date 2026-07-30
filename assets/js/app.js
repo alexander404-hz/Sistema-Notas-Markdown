@@ -197,7 +197,15 @@ function getDateRangeBounds(range, customStart, customEnd) {
   const startOfDay = (d) =>
     new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
   const endOfDay = (d) =>
-    new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999).getTime();
+    new Date(
+      d.getFullYear(),
+      d.getMonth(),
+      d.getDate(),
+      23,
+      59,
+      59,
+      999,
+    ).getTime();
 
   const now = new Date();
 
@@ -795,7 +803,9 @@ function createPersistentNotesStore() {
    * @returns {Result} `{ notes }` con el arreglo completo de notas activas.
    */
   function getAllNotes() {
-    return Result.ok({ notes: cloneNotes(notes.filter((note) => !note.deletedAt)) });
+    return Result.ok({
+      notes: cloneNotes(notes.filter((note) => !note.deletedAt)),
+    });
   }
 
   /**
@@ -1043,7 +1053,8 @@ function renderTrashList(trashedNotes) {
     const isSelected = selectedTrashIds.has(note.id);
 
     const trashItem = document.createElement("div");
-    trashItem.className = `trash-item ${isSelected ? "is-selected" : ""}`.trim();
+    trashItem.className =
+      `trash-item ${isSelected ? "is-selected" : ""}`.trim();
     trashItem.dataset.id = note.id;
 
     const checkboxLabel = document.createElement("label");
@@ -1085,7 +1096,8 @@ function renderTrashList(trashedNotes) {
 
     const deleteForeverButton = document.createElement("button");
     deleteForeverButton.type = "button";
-    deleteForeverButton.className = "btn-icon btn-icon-danger trash-delete-item";
+    deleteForeverButton.className =
+      "btn-icon btn-icon-danger trash-delete-item";
     deleteForeverButton.dataset.id = note.id;
     deleteForeverButton.title = "Eliminar definitivamente";
     deleteForeverButton.setAttribute("aria-label", "Eliminar definitivamente");
@@ -1707,12 +1719,16 @@ function initializeEventListeners(store) {
       );
     });
 
-    dateFilterCustom?.classList.toggle("is-hidden", dateFilterRange !== "custom");
+    dateFilterCustom?.classList.toggle(
+      "is-hidden",
+      dateFilterRange !== "custom",
+    );
   };
 
   dateFilterButton?.addEventListener("click", (event) => {
     event.stopPropagation();
-    const isOpen = dateFilterDropdown?.classList.contains("is-hidden") === false;
+    const isOpen =
+      dateFilterDropdown?.classList.contains("is-hidden") === false;
     isOpen ? closeDateFilterMenu() : openDateFilterMenu();
   });
 
@@ -2031,9 +2047,7 @@ function initializeEventListeners(store) {
   });
 
   trashListContainer?.addEventListener("change", (event) => {
-    if (
-      !event.target.matches(".trash-item-checkbox input[type='checkbox']")
-    )
+    if (!event.target.matches(".trash-item-checkbox input[type='checkbox']"))
       return;
 
     const noteId = event.target.dataset.id;
