@@ -1866,12 +1866,16 @@ function initializeEventListeners(store) {
   noteListContainer?.addEventListener(
     "touchstart",
     (event) => {
+      // Se resetea siempre, incluso si ya estamos en modo selección: si no,
+      // el flag queda en `true` desde el long-press anterior y el primer
+      // click sobre otra nota se descarta pensando que es el click fantasma.
+      longPressFired = false;
+
       if (selectionMode) return; // ya estamos seleccionando, nada que activar
 
       const noteItem = event.target.closest(".note-item");
       if (!noteItem) return;
 
-      longPressFired = false;
       longPressNoteItem = noteItem;
       noteItem.classList.add("is-long-pressing");
 
