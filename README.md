@@ -4,7 +4,7 @@ Aplicación de notas en **Markdown**, con operaciones CRUD completas, vista prev
 
 🔗 **Sitio en vivo:** [alexander404-hz.github.io/Sistema-Notas-Markdown](https://alexander404-hz.github.io/Sistema-Notas-Markdown/)
 
-[![Preview de Sistema de Notas Markdown](assets/img/preview.png)](https://alexander404-hz.github.io/Sistema-Notas-Markdown/)
+[![Preview de Sistema de Notas Markdown](assets/img/readme.png)](https://alexander404-hz.github.io/Sistema-Notas-Markdown/)
 
 ## ✨ Características
 
@@ -79,8 +79,9 @@ El proyecto se despliega en **GitHub Pages** desde este mismo repositorio.
 
 ## 👤 Autor
 
-**Alexander Hz.**
+**Alexander Hernández**
+Portafolio: [alexander404-hz.github.io/Portafolio](https://alexander404-hz.github.io/Portafolio/)
 
 ## 📄 Licencia
 
-Este proyecto no cuenta con una licencia definida — todos los derechos reservados.
+© 2026 Alexander Hz. Todos los derechos reservados.
