@@ -60,12 +60,16 @@ body {
   background-color: var(--paper);
   background-image: radial-gradient(rgba(36, 33, 27, 0.045) 1px, transparent 1px);
   background-size: 22px 22px;
-  height: 100vh;
+  height: 100vh; /* respaldo para navegadores sin soporte de dvh/svh */
+  height: 100dvh;
+  height: 100svh; /* espacio mínimo garantizado: evita el salto al reaparecer la barra */
   overflow: hidden;
 }
 
 .container {
-  height: 100vh;
+  height: 100vh; /* respaldo para navegadores sin soporte de dvh/svh */
+  height: 100dvh;
+  height: 100svh; /* espacio mínimo garantizado: evita el salto al reaparecer la barra */
   display: flex;
   flex-direction: column;
 }
