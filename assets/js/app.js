@@ -3,6 +3,7 @@
 // =============================================================================
 
 const STORAGE_KEY = "markdown-notes";
+const APP_VERSION = "1.0.0"; // se muestra en el diálogo "Acerca de" (menú ⋮)
 const EXCERPT_MAX_LEN = 100;
 const PREVIEW_DEBOUNCE_MS = 200;
 const SEARCH_DEBOUNCE_MS = 200;
@@ -1953,6 +1954,7 @@ function initializeEventListeners(store) {
       closeSortMenu();
       if (trashOverlay?.classList.contains("is-visible")) closeTrashDialog();
       if (importOverlay?.classList.contains("is-visible")) closeImportDialog();
+      if (aboutOverlay?.classList.contains("is-visible")) closeAboutDialog();
     }
   });
 
@@ -1960,10 +1962,7 @@ function initializeEventListeners(store) {
   // celular, etc.) con algún popover abierto, se recalcula su posición
   // en vez de dejarlo desalineado o fuera de pantalla.
   window.addEventListener("resize", () => {
-    if (
-      notesMenuDropdown &&
-      !notesMenuDropdown.classList.contains("is-hidden")
-    ) {
+    if (notesMenuDropdown && !notesMenuDropdown.classList.contains("is-hidden")) {
       positionDropdown(notesMenuButton, notesMenuDropdown, { align: "right" });
     }
     if (
@@ -2599,6 +2598,45 @@ function initializeEventListeners(store) {
     selectedTrashIds.clear();
     refreshTrashList();
     updateTrashBadge();
+  });
+
+  // ----------------------------------------------------------------------
+  // ACERCA DE (menú ⋮ → Acerca de)
+  // ----------------------------------------------------------------------
+
+  const aboutOverlay = document.querySelector("#about-overlay");
+  const aboutCloseButton = document.querySelector("#about-close-button");
+  const menuAboutItem = document.querySelector("#menu-about");
+  const aboutVersionBadge = document.querySelector("#about-version-badge");
+  const aboutVersionValue = document.querySelector("#about-version-value");
+  const aboutCopyright = document.querySelector("#about-copyright");
+
+  // Versión y año se completan desde JS para tener una única fuente de
+  // verdad (APP_VERSION) y para que el copyright nunca quede desactualizado.
+  if (aboutVersionBadge) aboutVersionBadge.textContent = `v${APP_VERSION}`;
+  if (aboutVersionValue) aboutVersionValue.textContent = APP_VERSION;
+  if (aboutCopyright) {
+    aboutCopyright.textContent = `© ${new Date().getFullYear()} Alexander Hz. Todos los derechos reservados.`;
+  }
+
+  const openAboutDialog = () => {
+    aboutOverlay?.classList.add("is-visible");
+    aboutCloseButton?.focus();
+  };
+
+  const closeAboutDialog = () => {
+    aboutOverlay?.classList.remove("is-visible");
+  };
+
+  menuAboutItem?.addEventListener("click", () => {
+    closeNotesMenu();
+    openAboutDialog();
+  });
+
+  aboutCloseButton?.addEventListener("click", closeAboutDialog);
+
+  aboutOverlay?.addEventListener("click", (event) => {
+    if (event.target === aboutOverlay) closeAboutDialog();
   });
 
   // ----------------------------------------------------------------------

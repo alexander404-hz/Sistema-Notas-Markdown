@@ -311,6 +311,18 @@ header h1::before {
   gap: 0.5rem;
 }
 
+.notes-menu-divider {
+  height: 1px;
+  margin: 0.3rem 0.2rem;
+  background-image: linear-gradient(
+    to right,
+    var(--border-strong) 50%,
+    transparent 50%
+  );
+  background-size: 6px 1px;
+  background-repeat: repeat-x;
+}
+
 .trash-count-badge {
   flex-shrink: 0;
   min-width: 1.2rem;
@@ -1362,6 +1374,104 @@ header h1::before {
   font-size: 0.72rem;
 }
 
+/* ----------------------------------------------------------------------------
+   ACERCA DE — reutiliza el look de .trash-dialog pero con acento dorado
+   en vez de rojo (no es una acción destructiva)
+---------------------------------------------------------------------------- */
+.about-dialog {
+  border-top-color: var(--gold);
+  max-width: 26rem;
+}
+
+.about-app {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.85rem;
+}
+
+.about-app-name {
+  font-family: var(--font-mono);
+  font-size: 1.05rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--ink);
+}
+
+.about-version-badge {
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  color: #7a5c14;
+  background-color: var(--gold-soft);
+  border: 1px solid var(--gold);
+  border-radius: 999px;
+  padding: 0.1rem 0.55rem;
+}
+
+.about-app-tagline {
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: var(--ink-soft);
+  margin-top: 0.4rem;
+  padding-bottom: 0.9rem;
+  border-bottom: 1px dashed var(--border-strong);
+}
+
+.about-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  padding: 0.9rem 0;
+}
+
+.about-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+}
+
+.about-row dt {
+  color: var(--ink-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-size: 0.68rem;
+  flex-shrink: 0;
+}
+
+.about-row dd {
+  color: var(--ink);
+  text-align: right;
+}
+
+.about-row dd a {
+  color: var(--accent);
+  text-decoration: none;
+  border-bottom: 1px solid var(--accent-soft);
+}
+
+.about-row dd a:hover {
+  color: var(--accent-hover);
+  border-bottom-color: var(--accent);
+}
+
+.about-copyright {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.02em;
+  color: var(--ink-faint);
+  text-align: center;
+  padding-top: 0.85rem;
+  border-top: 1px dashed var(--border-strong);
+}
+
 .trash-list {
   flex: 1;
   overflow-y: auto;
@@ -1550,6 +1660,14 @@ header h1::before {
 
   .trash-dialog-actions .btn {
     flex: 1;
+  }
+
+  .about-row {
+    flex-wrap: wrap;
+  }
+
+  .about-row dd {
+    text-align: left;
   }
 }
 

@@ -163,6 +163,14 @@
                         class="trash-count-badge is-hidden"
                       ></span>
                     </button>
+                    <div class="notes-menu-divider" role="separator"></div>
+                    <button
+                      id="menu-about"
+                      class="notes-menu-item"
+                      role="menuitem"
+                    >
+                      ℹ Acerca de
+                    </button>
                   </div>
                 </div>
               </div>
@@ -564,6 +572,73 @@
           </div>
         </div>
         <div id="import-list" class="trash-list"></div>
+      </div>
+    </div>
+    <div id="about-overlay" class="trash-overlay">
+      <div
+        id="about-dialog"
+        class="trash-dialog about-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="about-dialog-title"
+      >
+        <div class="trash-dialog-header">
+          <h3 id="about-dialog-title">ℹ Acerca de</h3>
+          <button
+            type="button"
+            id="about-close-button"
+            class="btn-icon"
+            title="Cerrar"
+            aria-label="Cerrar acerca de"
+          >
+            ✕
+          </button>
+        </div>
+
+        <div class="about-app">
+          <p class="about-app-name">Sistema de Notas Markdown</p>
+          <span id="about-version-badge" class="about-version-badge"
+            >v1.0.0</span
+          >
+        </div>
+        <p class="about-app-tagline">
+          Notas en Markdown con operaciones CRUD completas, vista previa en
+          tiempo real y búsqueda, todo persistido en tu navegador.
+        </p>
+
+        <dl class="about-rows">
+          <div class="about-row">
+            <dt>Autor</dt>
+            <dd>Alexander Hz.</dd>
+          </div>
+          <div class="about-row">
+            <dt>Versión</dt>
+            <dd id="about-version-value">1.0.0</dd>
+          </div>
+          <div class="about-row">
+            <dt>Licencia</dt>
+            <dd>Todos los derechos reservados</dd>
+          </div>
+          <div class="about-row">
+            <dt>Repositorio</dt>
+            <dd>
+              <a
+                href="https://alexander404-hz.github.io/Sistema-Notas-Markdown/"
+                target="_blank"
+                rel="noopener noreferrer"
+                >github.com/alexander404-hz</a
+              >
+            </dd>
+          </div>
+          <div class="about-row">
+            <dt>Hecho con</dt>
+            <dd>HTML · CSS · JavaScript · markdown-it</dd>
+          </div>
+        </dl>
+
+        <p id="about-copyright" class="about-copyright">
+          © 2026 Alexander Hz. Todos los derechos reservados.
+        </p>
       </div>
     </div>
     <script
