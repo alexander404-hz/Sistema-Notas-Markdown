@@ -197,7 +197,15 @@ function getDateRangeBounds(range, customStart, customEnd) {
   const startOfDay = (d) =>
     new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
   const endOfDay = (d) =>
-    new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999).getTime();
+    new Date(
+      d.getFullYear(),
+      d.getMonth(),
+      d.getDate(),
+      23,
+      59,
+      59,
+      999,
+    ).getTime();
 
   const now = new Date();
 
@@ -770,16 +778,11 @@ function createPersistentNotesStore() {
    * @returns {Result} `{ notes }` con el arreglo completo de notas activas.
    */
   function getAllNotes() {
-    return Result.ok({ notes: cloneNotes(notes.filter((note) => !note.deletedAt)) });
+    return Result.ok({
+      notes: cloneNotes(notes.filter((note) => !note.deletedAt)),
+    });
   }
 
-  /**
-   * Filtra y ordena las notas en un solo paso, combinando los criterios
-   * de favoritas y búsqueda por texto.
-   * @param {{ favoritesOnly?: boolean, searchQuery?: string }} [filters]
-   * @returns {Result} `{ notes }` con las notas filtradas, ordenadas de
-   * más reciente a más antigua según `updatedAt`.
-   */
   /**
    * Filtra y ordena las notas en un solo paso, combinando los criterios
    * de favoritas, búsqueda por texto y rango de fecha.
@@ -1018,7 +1021,8 @@ function renderTrashList(trashedNotes) {
     const isSelected = selectedTrashIds.has(note.id);
 
     const trashItem = document.createElement("div");
-    trashItem.className = `trash-item ${isSelected ? "is-selected" : ""}`.trim();
+    trashItem.className =
+      `trash-item ${isSelected ? "is-selected" : ""}`.trim();
     trashItem.dataset.id = note.id;
 
     const checkboxLabel = document.createElement("label");
@@ -1060,7 +1064,8 @@ function renderTrashList(trashedNotes) {
 
     const deleteForeverButton = document.createElement("button");
     deleteForeverButton.type = "button";
-    deleteForeverButton.className = "btn-icon btn-icon-danger trash-delete-item";
+    deleteForeverButton.className =
+      "btn-icon btn-icon-danger trash-delete-item";
     deleteForeverButton.dataset.id = note.id;
     deleteForeverButton.title = "Eliminar definitivamente";
     deleteForeverButton.setAttribute("aria-label", "Eliminar definitivamente");
@@ -1477,10 +1482,6 @@ function initializeEventListeners(store) {
   };
 
   // Marca una ficha como "activa" sin reconstruir la lista completa.
-  // Antes, abrir una nota disparaba refreshNoteList() (innerHTML = "" +
-  // recrear todas las fichas), lo que hacía que TODAS repitieran su
-  // animación de entrada en cada click — se sentía como un pequeño tranco
-  // en toda la lista. Con solo mover la clase, el resto del DOM ni se toca.
   const highlightActiveNoteItem = (noteItem) => {
     noteListContainer
       ?.querySelectorAll(".note-item.active")
@@ -1519,9 +1520,6 @@ function initializeEventListeners(store) {
   };
 
   noteListContainer?.addEventListener("click", (event) => {
-    // En modo selección, un click en cualquier parte de la ficha (que no
-    // sea el checkbox, que ya maneja su propio "change") alterna la
-    // selección en vez de abrir la nota en el editor.
     if (selectionMode) {
       if (event.target.closest(".note-select-checkbox")) return;
 
@@ -1710,12 +1708,16 @@ function initializeEventListeners(store) {
       );
     });
 
-    dateFilterCustom?.classList.toggle("is-hidden", dateFilterRange !== "custom");
+    dateFilterCustom?.classList.toggle(
+      "is-hidden",
+      dateFilterRange !== "custom",
+    );
   };
 
   dateFilterButton?.addEventListener("click", (event) => {
     event.stopPropagation();
-    const isOpen = dateFilterDropdown?.classList.contains("is-hidden") === false;
+    const isOpen =
+      dateFilterDropdown?.classList.contains("is-hidden") === false;
     isOpen ? closeDateFilterMenu() : openDateFilterMenu();
   });
 
@@ -2024,9 +2026,7 @@ function initializeEventListeners(store) {
   });
 
   trashListContainer?.addEventListener("change", (event) => {
-    if (
-      !event.target.matches(".trash-item-checkbox input[type='checkbox']")
-    )
+    if (!event.target.matches(".trash-item-checkbox input[type='checkbox']"))
       return;
 
     const noteId = event.target.dataset.id;
